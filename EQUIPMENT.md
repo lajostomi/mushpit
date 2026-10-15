@@ -1,6 +1,6 @@
-# Mushroom Bio-Resistance Monitor ("MycoPulse") — Equipment & Prompts
+# Mushroom Bio-Resistance Monitor ("Mushpit") — Equipment & Prompts
 
-This document contains the complete equipment specification, circuit wiring, and ready-to-use AI prompts for the **MycoPulse** substrate bio-resistance and electrophysiology monitoring setup.
+This document contains the complete equipment specification, circuit wiring, and ready-to-use AI prompts for the **Mushpit** substrate bio-resistance and electrophysiology monitoring setup.
 
 ---
 
@@ -8,7 +8,7 @@ This document contains the complete equipment specification, circuit wiring, and
 > **Usage:** Copy and paste this into ChatGPT, Claude, Gemini, or any LLM when you need help writing code, debugging hardware issues, designing experiments, or analyzing your data.
 
 ```text
-Project: Mushroom Mycelium Bio-Resistance & Electrophysiology Monitor ("MycoPulse")
+Project: Mushroom Mycelium Bio-Resistance & Electrophysiology Monitor ("Mushpit")
 
 Hardware & Equipment Setup:
 - Microcontroller: Arduino Uno (ATmega328P, 5V logic, 16 MHz)
@@ -27,7 +27,7 @@ Hardware & Equipment Setup:
   - Alternating biphasic pulses (Forward: Pin 2 HIGH, Pin 3 LOW; Reverse: Pin 3 HIGH, Pin 2 LOW) with resting states (floating high-impedance INPUT mode) to prevent electrolytic polarization and electrode degradation.
   - Settle time: 5 ms, 8x oversampled per reading.
 - Host Interface:
-  - 115200 baud serial connection streaming CSV/telemetry to a Web Serial API browser dashboard ("MycoPulse") displaying real-time bio-resistance, electrode settling drift, and hydration estimates.
+  - 115200 baud serial connection streaming CSV/telemetry to a Web Serial API browser dashboard ("Mushpit") displaying real-time bio-resistance, electrode settling drift, and hydration estimates.
 ```
 
 ---

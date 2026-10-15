@@ -1,4 +1,4 @@
-// MycoPulse -> Strudel: a choir sung by mycelium
+// Mushpit -> Strudel: a choir sung by mycelium
 // Paste into https://strudel.cc and press Ctrl+Enter.
 // The first run asks you to pick the Arduino's serial port (Chrome/Edge only).
 // With no port chosen it falls back to a simulated drifting signal, so you can hear the patch.
@@ -54,7 +54,7 @@ if (!globalThis.__mycoBridge) {
     }
     globalThis.myco.live = false
   }
-  if ('serial' in navigator) open().catch((e) => console.warn('MycoPulse: serial unavailable, using simulation —', e.message))
+  if ('serial' in navigator) open().catch((e) => console.warn('Mushpit: serial unavailable, using simulation —', e.message))
 }
 
 // ───────────── 2. mapping ─────────────

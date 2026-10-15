@@ -1,5 +1,6 @@
-// MycoPulse: alternating-polarity bio-resistance meter -> serial CSV "ms,ohms"
+// Mushpit: alternating-polarity bio-resistance meter -> serial CSV "ms,ohms"
 // Wiring: D2 -> Rod A | substrate | Rod B -> node -> ADS1115 A0 ; node -> 10k -> D3
+//         ADS1115: VDD 5V, GND, SDA -> A4, SCL -> A5
 // Library: Adafruit ADS1X15 (Library Manager)
 #include <Wire.h>
 #include <Adafruit_ADS1X15.h>
@@ -11,7 +12,7 @@ const float   VCC   = 5.0;          // measure the Uno 5V pin for best accuracy
 const uint8_t SETTLE_MS = 5;
 const uint8_t SAMPLES   = 8;
 const uint8_t REST_MS   = 50;       // floating pause between polarities (limits electrode polarisation)
-const uint16_t CYCLE_MS = 200;      // one output line per cycle
+const uint16_t CYCLE_MS = 200;      // one resistance line per cycle
 
 Adafruit_ADS1115 ads;
 
