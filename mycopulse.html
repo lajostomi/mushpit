@@ -5,147 +5,201 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MycoPulse</title>
 <style>
-  :root { --bg:#0e1512; --fg:#d7efe3; --mut:#7fa592; --acc:#3ddc97; }
-  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
-  h1 { margin:0 0 4px; font-size:20px; }
-  p { margin:0 0 12px; color:var(--mut); }
-  .bar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:12px; }
-  button { background:var(--acc); color:#04140c; border:0; border-radius:6px; padding:8px 14px; font:inherit; cursor:pointer; }
-  .meter { flex:1 1 200px; height:10px; background:#1d2a24; border-radius:5px; overflow:hidden; }
-  .meter > i { display:block; height:100%; width:50%; background:var(--acc); transition:width .1s; }
-  /* Strudel injects a full-screen visualiser canvas; keep it behind our UI */
-  #test-canvas { z-index:-1 !important; pointer-events:none; }
-  button.alt { background:transparent; color:var(--acc); border:1px solid var(--acc); }
-  .range { font-size:13px; color:var(--mut); }
-  .range input[type=number] { width:80px; background:#1d2a24; color:var(--fg); border:1px solid #2c3d35; border-radius:4px; padding:3px 6px; }
-  .read { display:flex; flex-wrap:wrap; gap:20px; align-items:flex-end; margin-bottom:8px; }
-  .read b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
-  .read small { color:var(--mut); }
-  canvas { width:100%; height:180px; background:#0a100d; border-radius:6px; margin-bottom:12px; }
-  #status { color:var(--mut); font-size:13px; }
+  :root {
+    --bg:#f2f2ef; --panel:#fff; --ink:#111; --mut:#666; --line:#111; --grid:#d6d6d0; --acc:#e8480c;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:13px/1.4 var(--mono); }
+  header { display:flex; align-items:stretch; border-bottom:1px solid var(--line); background:var(--panel); }
+  header h1 { margin:0; padding:10px 16px; font-size:13px; letter-spacing:.12em; border-right:1px solid var(--line); }
+  nav { display:flex; }
+  nav button { border:0; border-right:1px solid var(--line); background:transparent; padding:10px 18px; font:inherit; letter-spacing:.08em; cursor:pointer; }
+  nav button[aria-selected=true] { background:var(--ink); color:#fff; }
+  #conn { margin-left:auto; padding:10px 16px; border-left:1px solid var(--line); display:flex; gap:8px; align-items:center; }
+  .dot { width:9px; height:9px; border:1px solid var(--ink); background:transparent; }
+  .dot.on { background:var(--acc); border-color:var(--acc); }
+  main { padding:16px; max-width:1100px; margin:0 auto; }
+  section[hidden] { display:none; }
+  .box { background:var(--panel); border:1px solid var(--line); margin-bottom:16px; }
+  .box > .t { padding:5px 10px; border-bottom:1px solid var(--line); font-size:11px; letter-spacing:.1em; color:var(--mut); display:flex; justify-content:space-between; }
+  button.b { font:inherit; background:var(--panel); border:1px solid var(--line); padding:6px 12px; cursor:pointer; letter-spacing:.06em; }
+  button.b:hover { background:var(--ink); color:#fff; }
+  button.b:disabled { opacity:.4; cursor:default; background:var(--panel); color:var(--ink); }
+  button.rec { background:var(--acc); border-color:var(--acc); color:#fff; }
+  button.rec:hover { background:#b53808; }
+  .readout { display:flex; flex-wrap:wrap; }
+  .readout > div { padding:10px 16px; border-right:1px solid var(--line); }
+  .readout > div:last-child { border-right:0; }
+  .readout small { display:block; font-size:11px; color:var(--mut); letter-spacing:.1em; }
+  .big { font-size:48px; line-height:1.1; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .big u { font-size:18px; text-decoration:none; color:var(--mut); margin-left:6px; letter-spacing:0; }
+  .stat { font-size:18px; font-variant-numeric:tabular-nums; }
+  canvas { display:block; width:100%; height:320px; }
+  .ctl { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:8px 10px; border-top:1px solid var(--line); font-size:12px; }
+  .ctl select { font:inherit; border:1px solid var(--line); background:var(--panel); padding:2px 4px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--grid); font-weight:normal; }
+  th { font-size:11px; letter-spacing:.1em; color:var(--mut); border-bottom:1px solid var(--line); }
+  td.n { font-variant-numeric:tabular-nums; }
+  td.act { text-align:right; white-space:nowrap; }
+  td.act button { margin-left:4px; }
+  .empty { padding:16px 10px; color:var(--mut); }
+  .recbar { display:flex; align-items:center; gap:16px; padding:16px 10px; }
+  .meterbar { flex:1; height:14px; border:1px solid var(--line); position:relative; }
+  .meterbar i { position:absolute; inset:0 auto 0 0; width:0; background:var(--ink); }
+  .count { font-size:28px; width:90px; font-variant-numeric:tabular-nums; }
+  .msg { padding:0 10px 12px; color:var(--mut); min-height:1.4em; }
+  .err { color:var(--acc); }
 </style>
 </head>
 <body>
-<h1>MycoPulse</h1>
-<p>Mycelium resistance → Strudel choir. Press Connect for the Arduino, or just play the editor (simulated signal).</p>
-<div class="bar">
-  <button id="play">▶ Play</button>
-  <button id="stop" class="alt">■ Stop</button>
-  <button id="connect" class="alt">Connect Arduino</button>
-  <span id="status">simulated signal</span>
-</div>
-<div class="bar range">
-  <label><input type="checkbox" id="auto"> auto range</label>
-  <label>low <input type="number" id="rmin" value="5000" step="500"> Ω</label>
-  <label>high <input type="number" id="rmax" value="20000" step="500"> Ω</label>
-  <small>The music follows where the resistance sits between low and high. Set them to your substrate's dry and wet values.</small>
-</div>
-<div class="read">
-  <div><b id="ohms">–</b><small>ohms</small></div>
-  <div><b id="lvlpct">–</b><small>level</small></div>
-  <div><b id="actpct">–</b><small>activity</small></div>
-  <div class="meter" title="resistance level"><i id="lvl"></i></div>
-</div>
-<canvas id="chart" width="900" height="180"></canvas>
+<header>
+  <h1>MYCOPULSE</h1>
+  <nav role="tablist">
+    <button role="tab" id="tab-mon" aria-selected="true">MONITOR</button>
+    <button role="tab" id="tab-rec" aria-selected="false">RECORDER</button>
+  </nav>
+  <div id="conn"><span class="dot" id="dot"></span><span id="connTxt">NO SIGNAL</span></div>
+</header>
 
-<!-- AGPL-3.0: if you publish this page, publish its source under a compatible licence too. -->
-<script src="https://unpkg.com/@strudel/repl@latest"></script>
-<strudel-editor>
-<!--
-setcps(0.35)
-const lvl = signal(() => globalThis.myco.v)
-const act = signal(() => globalThis.myco.d)
-// resistance level (0..1) decides pitch, brightness AND which voices sing:
-//   low resistance  -> deep oohs, dark;  mid -> choir;  high -> solo voice joins, bright
-const band = (lo, hi) => lvl.segment(8).fmap((v) => (v >= lo && v < hi ? 1 : 0))
-stack(
-  n(lvl.segment(4).range(0, 10)).scale('D4:minor:pentatonic')
-    .s('gm_choir_aahs').attack(0.15).release(0.8)
-    .lpf(lvl.range(800, 7000)).room(0.8).gain(band(0.25, 1.01).mul(0.8)),
-  n(lvl.segment(1).range(0, 6)).scale('D3:minor:pentatonic')
-    .s('gm_voice_oohs').attack(0.4).release(1.5).room(0.9).gain(band(0, 0.6).mul(0.8)),
-  n(lvl.segment(8).range(0, 12)).scale('D4:minor:pentatonic')
-    .s('gm_lead_6_voice').gain(band(0.6, 1.01).mul(0.6))
-    .room(0.6).delay(0.3),
-  s('gm_breath_noise').n(lvl.segment(1).range(0, 7).floor()).slow(2)
-    .gain(act.range(0.1, 0.6)).hpf(500).room(0.6).pan(sine.slow(7))
-)
--->
-</strudel-editor>
+<main>
+<!-- ═════════════ MONITOR ═════════════ -->
+<section id="mon">
+  <div class="box">
+    <div class="t"><span>SUBSTRATE RESISTANCE</span><span id="src">SOURCE: —</span></div>
+    <div class="readout">
+      <div><small>LIVE</small><div class="big"><span id="live">—</span><u>Ω</u></div></div>
+      <div><small>MIN</small><div class="stat" id="smin">—</div></div>
+      <div><small>MAX</small><div class="stat" id="smax">—</div></div>
+      <div><small>MEAN</small><div class="stat" id="smean">—</div></div>
+      <div><small>RATE</small><div class="stat" id="srate">—</div></div>
+      <div><small>SAMPLES</small><div class="stat" id="scount">0</div></div>
+    </div>
+  </div>
+
+  <div class="box">
+    <div class="t"><span>VOICE · RESISTANCE → LIBRARY</span><span id="vstat">OFF</span></div>
+    <div class="readout">
+      <div><small>ACTIVE CLIP</small><div class="stat" id="vclip">—</div></div>
+      <div><small>ZONE</small><div class="stat" id="vzone">—</div></div>
+      <div><small>LIBRARY</small><div class="stat" id="vlib">0 clips</div></div>
+    </div>
+    <div class="ctl">
+      <button class="b" id="voice">VOICE: OFF</button>
+      <label>VOLUME <input type="range" id="vol" min="0" max="1" step="0.01" value="0.8"></label>
+      <label><input type="checkbox" id="vauto" checked> AUTO SCALE (min–max of last 10 min)</label>
+      <label>LOW <input type="number" id="vlo" value="5000" step="100" style="width:90px"> Ω</label>
+      <label>HIGH <input type="number" id="vhi" value="20000" step="100" style="width:90px"> Ω</label>
+      <button class="b" id="vsave" title="store LOW / HIGH and use them as a fixed scale">SAVE SCALE</button>
+      <button class="b" id="vclr" title="forget the saved scale and go back to auto">RESET TO AUTO</button>
+      <span id="vsaved" style="color:var(--mut)"></span>
+    </div>
+    <div class="msg" id="vmsg" style="padding-top:8px">The library is split into one resistance zone per clip (vowel_1 lowest). When the reading crosses into another zone, that clip takes over, looped. Clips you record appear here immediately.</div>
+  </div>
+
+  <div class="box">
+    <div class="t"><span>WAVEFORM</span><span id="scale">—</span></div>
+    <canvas id="scope"></canvas>
+    <div class="ctl">
+      <button class="b" id="connect">CONNECT ARDUINO</button>
+      <button class="b" id="disconnect" disabled>DISCONNECT</button>
+      <label><input type="checkbox" id="sim"> SIMULATE (no hardware)</label>
+      <label>WINDOW <select id="win">
+        <option value="15">15 s</option><option value="60" selected>60 s</option>
+        <option value="300">5 min</option><option value="900">15 min</option></select></label>
+      <button class="b" id="clear">CLEAR</button>
+      <button class="b" id="csv" title="download the buffer as CSV">EXPORT CSV</button>
+      <span id="monmsg" class="err"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════ RECORDER ═════════════ -->
+<section id="recsec" hidden>
+  <div class="box">
+    <div class="t"><span>RECORD · 3.0 s</span><span id="nextname">NEXT: vowel_1</span></div>
+    <div class="recbar">
+      <button class="b rec" id="recbtn">● RECORD</button>
+      <div class="count" id="count">3.0</div>
+      <div class="meterbar" title="input level"><i id="inlvl"></i></div>
+    </div>
+    <div class="msg" id="recmsg"></div>
+  </div>
+
+  <div class="box">
+    <div class="t"><span>LIBRARY</span><span id="libcount">0 FILES</span></div>
+    <div class="ctl" style="border-top:0;border-bottom:1px solid var(--line)">
+      <button class="b" id="upbtn">UPLOAD AUDIO FILES</button>
+      <input type="file" id="upfile" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm,.flac,.aac" multiple hidden>
+      <span style="color:var(--mut)">or drop files on this box · wav, mp3, m4a, ogg, webm, flac · max 25 MB each · saved as vowel_N in order</span>
+    </div>
+    <div class="msg" id="upmsg" style="padding-top:8px"></div>
+    <table>
+      <thead><tr><th>NAME</th><th>SOURCE</th><th>LENGTH</th><th>SIZE</th><th>ADDED</th><th></th></tr></thead>
+      <tbody id="lib"></tbody>
+    </table>
+    <div class="empty" id="libempty">No recordings yet.</div>
+  </div>
+</section>
+</main>
 
 <script>
-// the component sometimes initialises before the comment is parsed: fill the editor ourselves
-addEventListener('load', () => {
-  const el = document.querySelector('strudel-editor');
-  const c = [...el.childNodes].find((n) => n.nodeType === 8);
-  if (c && el.editor && !el.editor.code) el.editor.setCode(c.textContent.trim());
-});
+'use strict';
+const $ = (id) => document.getElementById(id);
 
-// ───── data bridge: Arduino (Web Serial) or simulation → globalThis.myco ─────
-const myco = (globalThis.myco = { v: 0.5, d: 0, raw: 0, min: NaN, max: NaN, live: false });
-const parseLine = (line) => parseFloat(line.trim().split(',').pop()); // last CSV field = ohms
+// ───────────── tabs ─────────────
+function showTab(name) {
+  $('mon').hidden = name !== 'mon';
+  $('recsec').hidden = name !== 'rec';
+  $('tab-mon').setAttribute('aria-selected', name === 'mon');
+  $('tab-rec').setAttribute('aria-selected', name === 'rec');
+  if (name === 'rec') refreshLibrary();
+}
+$('tab-mon').onclick = () => showTab('mon');
+$('tab-rec').onclick = () => showTab('rec');
 
-function feed(raw) {
-  if (!isFinite(raw)) return;
-  myco.min = isNaN(myco.min) ? raw : Math.min(myco.min + (raw - myco.min) * 0.0005, raw);
-  myco.max = isNaN(myco.max) ? raw : Math.max(myco.max + (raw - myco.max) * 0.0005, raw);
-  const auto = document.getElementById('auto').checked;
-  const lo = auto ? myco.min : +document.getElementById('rmin').value;
-  const hi = auto ? myco.max : +document.getElementById('rmax').value;
-  const v = Math.min(1, Math.max(0, (raw - lo) / Math.max(hi - lo, 1e-6)));
-  const prev = myco.v;
-  myco.v = prev + (v - prev) * 0.15;
-  myco.d = Math.min(1, myco.d * 0.9 + Math.abs(v - prev) * 8);
-  myco.raw = raw;
-  document.getElementById('lvl').style.width = (myco.v * 100).toFixed(0) + '%';
-  document.getElementById('ohms').textContent = raw >= 1000 ? (raw / 1000).toFixed(2) + ' k' : raw.toFixed(0);
-  document.getElementById('lvlpct').textContent = (myco.v * 100).toFixed(0) + '%';
-  document.getElementById('actpct').textContent = (myco.d * 100).toFixed(0) + '%';
-  series.push(raw);
-  if (series.length > MAXPTS) series.shift();
-  drawChart();
+// ═════════════════════════════ MONITOR ═════════════════════════════
+const MAXKEEP = 20000;          // samples kept in memory
+let series = [];                // {t: ms (performance.now), r: ohms}
+let source = null;              // 'SERIAL' | 'SIM' | null
+let serial = null;              // {port, reader}
+let total = 0;
+
+const fmt = (r) => (r >= 100000 ? r.toFixed(0) : r.toFixed(1));
+const fmtOhm = (r) => (r >= 1e6 ? (r / 1e6).toFixed(3) + ' MΩ' : r >= 1000 ? (r / 1000).toFixed(2) + ' kΩ' : r.toFixed(1) + ' Ω');
+
+function push(r) {
+  if (!isFinite(r)) return;
+  series.push({ t: performance.now(), r });
+  if (series.length > MAXKEEP) series.shift();
+  total++;
 }
 
-// ───── live chart of the raw resistance ─────
-const series = [], MAXPTS = 600;
-const cv = document.getElementById('chart'), cx = cv.getContext('2d');
-function drawChart() {
-  const w = cv.width, h = cv.height;
-  cx.clearRect(0, 0, w, h);
-  if (series.length < 2) return;
-  const lo = Math.min(...series), hi = Math.max(...series), span = Math.max(hi - lo, 1);
-  cx.strokeStyle = '#3ddc97'; cx.lineWidth = 2; cx.beginPath();
-  series.forEach((r, i) => {
-    const x = (i / (MAXPTS - 1)) * w, y = h - 14 - ((r - lo) / span) * (h - 28);
-    i ? cx.lineTo(x, y) : cx.moveTo(x, y);
-  });
-  cx.stroke();
-  cx.fillStyle = '#7fa592'; cx.font = '12px system-ui';
-  cx.fillText(hi.toFixed(0) + ' Ω', 6, 12);
-  cx.fillText(lo.toFixed(0) + ' Ω', 6, h - 3);
+function setSource(s) {
+  source = s;
+  $('dot').classList.toggle('on', !!s);
+  $('connTxt').textContent = s === 'SERIAL' ? 'ARDUINO · 115200' : s === 'SIM' ? 'SIMULATED' : 'NO SIGNAL';
+  $('src').textContent = 'SOURCE: ' + (s ?? '—');
+  $('connect').disabled = s === 'SERIAL';
+  $('disconnect').disabled = s !== 'SERIAL';
 }
 
-// ───── play / stop the Strudel code ─────
-const ed = () => document.querySelector('strudel-editor').editor;
-document.getElementById('play').onclick = () => ed().evaluate();
-document.getElementById('stop').onclick = () => ed().stop();
+// serial line = CSV, last field = ohms (e.g. "12345,10432.7")
+const parseLine = (l) => parseFloat(l.trim().split(',').pop());
 
-let t = 0;
-setInterval(() => {
-  if (myco.live) return;
-  t += 0.05;
-  feed(10000 + 2500 * Math.sin(t * 0.3) + 800 * Math.sin(t * 1.7) + (Math.random() - 0.5) * 300);
-}, 100);
-
-document.getElementById('connect').onclick = async () => {
-  const status = document.getElementById('status');
-  if (!('serial' in navigator)) { status.textContent = 'Web Serial needs Chrome or Edge'; return; }
+$('connect').onclick = async () => {
+  $('monmsg').textContent = '';
+  if (!('serial' in navigator)) { $('monmsg').textContent = 'Web Serial unavailable: use Chrome or Edge.'; return; }
   try {
     const port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200 });
-    myco.live = true;
-    status.textContent = 'live: Arduino connected';
-    const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+    $('sim').checked = false;
+    setSource('SERIAL');
+    const dec = new TextDecoderStream();
+    const closed = port.readable.pipeTo(dec.writable).catch(() => {});
+    const reader = dec.readable.getReader();
+    serial = { port, reader, closed };
     let buf = '';
     for (;;) {
       const { value, done } = await reader.read();
@@ -153,14 +207,426 @@ document.getElementById('connect').onclick = async () => {
       buf += value;
       const lines = buf.split('\n');
       buf = lines.pop();
-      lines.forEach((l) => feed(parseLine(l)));
+      lines.forEach((l) => push(parseLine(l)));
     }
   } catch (e) {
-    status.textContent = 'serial error: ' + e.message;
+    if (serial) $('monmsg').textContent = 'Serial error: ' + e.message;
+    else $('monmsg').textContent = 'Not connected: ' + e.message;
   }
-  myco.live = false;
-  status.textContent = 'simulated signal';
+  await closeSerial();
 };
+
+async function closeSerial() {
+  if (!serial) return;
+  const s = serial; serial = null;
+  try { await s.reader.cancel(); } catch {}
+  try { await s.closed; } catch {}
+  try { await s.port.close(); } catch {}
+  setSource($('sim').checked ? 'SIM' : null);
+}
+$('disconnect').onclick = closeSerial;
+
+// simulation (only when ticked and no serial connection)
+let simT = 0;
+setInterval(() => {
+  if (!$('sim').checked || serial) return;
+  if (source !== 'SIM') setSource('SIM');
+  simT += 0.2;
+  push(10000 + 2500 * Math.sin(simT * 0.15) + 800 * Math.sin(simT * 0.9) + (Math.random() - 0.5) * 150);
+}, 200);
+$('sim').onchange = () => { if (!serial) setSource($('sim').checked ? 'SIM' : null); };
+
+$('clear').onclick = () => { series = []; total = 0; };
+
+$('csv').onclick = () => {
+  if (!series.length) return;
+  const t0 = series[0].t;
+  const rows = ['seconds,ohms', ...series.map((p) => ((p.t - t0) / 1000).toFixed(3) + ',' + p.r)];
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' }));
+  a.download = 'mycopulse_' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+};
+
+// ───── scope ─────
+const cv = $('scope'), cx = cv.getContext('2d');
+function fit() {
+  const d = devicePixelRatio || 1, r = cv.getBoundingClientRect();
+  cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d);
+  cx.setTransform(d, 0, 0, d, 0, 0);
+}
+addEventListener('resize', fit); fit();
+
+function niceStep(span) {
+  const raw = span / 4, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+  return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
+}
+
+function draw() {
+  requestAnimationFrame(draw);
+  const w = cv.clientWidth, h = cv.clientHeight, W = +$('win').value;
+  const now = performance.now(), t0 = now - W * 1000;
+  cx.clearRect(0, 0, w, h);
+  const padL = 64, padB = 20, pw = w - padL, ph = h - padB;
+
+  // visible points
+  let i0 = series.findIndex((p) => p.t >= t0); if (i0 < 0) i0 = series.length; if (i0 > 0) i0--;
+  const vis = series.slice(i0);
+  let lo = Infinity, hi = -Infinity;
+  vis.forEach((p) => { if (p.r < lo) lo = p.r; if (p.r > hi) hi = p.r; });
+  if (!vis.length) { lo = 0; hi = 1; }
+  if (hi - lo < 1) { lo -= 0.5; hi += 0.5; }
+  const pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
+  const step = niceStep(hi - lo), yv = (r) => ph - ((r - lo) / (hi - lo)) * ph;
+
+  // grid
+  cx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+  cx.lineWidth = 1; cx.strokeStyle = '#d6d6d0'; cx.fillStyle = '#666';
+  cx.textAlign = 'right'; cx.textBaseline = 'middle';
+  for (let v = Math.ceil(lo / step) * step; v < hi; v += step) {
+    const y = Math.round(yv(v)) + .5;
+    cx.beginPath(); cx.moveTo(padL, y); cx.lineTo(w, y); cx.stroke();
+    cx.fillText(fmt(v), padL - 6, y);
+  }
+  cx.textAlign = 'center'; cx.textBaseline = 'top';
+  for (let k = 0; k <= 10; k++) {
+    const x = Math.round(padL + (pw * k) / 10) + .5;
+    cx.beginPath(); cx.moveTo(x, 0); cx.lineTo(x, ph); cx.stroke();
+    const secAgo = W - (W * k) / 10;
+    cx.textAlign = k === 10 ? 'right' : k === 0 ? 'left' : 'center';
+    cx.fillText(k === 10 ? 'now' : '-' + (secAgo >= 60 ? (secAgo / 60).toFixed(secAgo % 60 ? 1 : 0) + 'm' : secAgo.toFixed(0) + 's'), x, ph + 4);
+  }
+  cx.strokeStyle = '#111'; cx.strokeRect(padL + .5, .5, pw - 1, ph - 1);
+
+  // voice zones: one horizontal band per library clip
+  if (voice.on && zones.n > 0) {
+    cx.save(); cx.beginPath(); cx.rect(padL, 0, pw, ph); cx.clip();
+    const zs = (zones.hi - zones.lo) / zones.n;
+    for (let k = 0; k < zones.n; k++) {
+      const yTop = yv(zones.lo + (k + 1) * zs), yBot = yv(zones.lo + k * zs);
+      if (k === zones.cur) { cx.fillStyle = 'rgba(232,72,12,.14)'; cx.fillRect(padL, yTop, pw, yBot - yTop); }
+      cx.strokeStyle = '#e8480c'; cx.setLineDash([4, 4]); cx.beginPath();
+      cx.moveTo(padL, Math.round(yBot) + .5); cx.lineTo(padL + pw, Math.round(yBot) + .5); cx.stroke();
+      cx.setLineDash([]);
+      cx.fillStyle = k === zones.cur ? '#e8480c' : '#999'; cx.textAlign = 'left'; cx.textBaseline = 'middle';
+      cx.fillText(zones.names[k], padL + 6, (yTop + yBot) / 2);
+    }
+    cx.restore();
+  }
+
+  // trace
+  if (vis.length) {
+    cx.save(); cx.beginPath(); cx.rect(padL, 0, pw, ph); cx.clip();
+    cx.strokeStyle = '#111'; cx.lineWidth = 1.5; cx.lineJoin = 'round'; cx.beginPath();
+    vis.forEach((p, i) => {
+      const x = padL + ((p.t - t0) / (W * 1000)) * pw, y = yv(p.r);
+      i ? cx.lineTo(x, y) : cx.moveTo(x, y);
+    });
+    const last = vis[vis.length - 1];
+    cx.lineTo(padL + pw, yv(last.r));      // hold last value to "now"
+    cx.stroke();
+    cx.fillStyle = '#e8480c';
+    cx.fillRect(padL + pw - 4, yv(last.r) - 4, 8, 8);
+    cx.restore();
+  } else {
+    cx.fillStyle = '#666'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+    cx.fillText('NO DATA — connect the Arduino or tick SIMULATE', padL + pw / 2, ph / 2);
+  }
+  $('scale').textContent = vis.length ? `Y: ${fmt(lo)} – ${fmt(hi)} Ω (auto) · X: ${W} s` : '—';
+}
+requestAnimationFrame(draw);
+
+// numbers (refreshed 10×/s)
+setInterval(() => {
+  const last = series[series.length - 1];
+  const fresh = last && performance.now() - last.t < 2500;
+  $('live').textContent = last ? fmt(last.r) : '—';
+  $('live').style.opacity = fresh || !last ? 1 : .35;     // dim when the stream stalls
+  const W = +$('win').value * 1000, now = performance.now();
+  const vis = series.filter((p) => p.t >= now - W);
+  if (vis.length) {
+    let lo = Infinity, hi = -Infinity, sum = 0;
+    vis.forEach((p) => { lo = Math.min(lo, p.r); hi = Math.max(hi, p.r); sum += p.r; });
+    $('smin').textContent = fmtOhm(lo); $('smax').textContent = fmtOhm(hi); $('smean').textContent = fmtOhm(sum / vis.length);
+  } else { $('smin').textContent = $('smax').textContent = $('smean').textContent = '—'; }
+  voiceTick(last, fresh, vis);
+  const recent = series.filter((p) => p.t >= now - 5000).length;
+  $('srate').textContent = recent ? (recent / 5).toFixed(1) + ' Hz' : '—';
+  $('scount').textContent = total;
+}, 100);
+
+// ═════════════════════════════ VOICE ENGINE ═════════════════════════════
+// resistance → zone → library clip (looped, cross-faded). Reads the live library.
+const AUTO_MS = 10 * 60 * 1000;                     // auto scale looks back this far
+const FADE = 0.15;                                  // s cross-fade
+const voice = { on: false, ctx: null, master: null, clips: [], bufs: new Map(), cur: -1, play: null, libVer: -1 };
+const zones = { lo: 0, hi: 1, n: 0, cur: -1, names: [] };
+let libVersion = 0;                                  // bumped whenever the library changes
+
+async function syncClips() {
+  voice.libVer = libVersion;
+  try { voice.clips = await allClips(); } catch (e) { $('vmsg').textContent = 'Library read failed: ' + e.message; return; }
+  voice.cur = -1;                                     // zones moved: re-pick the clip on the next tick
+  $('vlib').textContent = voice.clips.length + (voice.clips.length === 1 ? ' clip' : ' clips');
+  if (!voice.ctx) return;
+  for (const c of voice.clips) {
+    if (voice.bufs.has(c.index)) continue;
+    voice.bufs.set(c.index, null);                    // mark as decoding
+    try { voice.bufs.set(c.index, await voice.ctx.decodeAudioData(await c.blob.arrayBuffer())); }
+    catch (e) { voice.bufs.delete(c.index); $('vmsg').textContent = 'Could not decode ' + c.name + ': ' + e.message; }
+  }
+}
+
+function stopPlay(p, fade) {
+  if (!p) return;
+  const t = voice.ctx.currentTime;
+  p.gain.gain.cancelScheduledValues(t); p.gain.gain.setValueAtTime(p.gain.gain.value, t);
+  p.gain.gain.linearRampToValueAtTime(0, t + fade);
+  p.src.stop(t + fade + 0.02);
+}
+
+function startClip(i) {
+  const c = voice.clips[i], buf = c && voice.bufs.get(c.index);
+  if (!buf) return false;
+  const t = voice.ctx.currentTime, src = voice.ctx.createBufferSource(), g = voice.ctx.createGain();
+  src.buffer = buf; src.loop = true;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + FADE);
+  src.connect(g).connect(voice.master); src.start();
+  stopPlay(voice.play, FADE);
+  voice.play = { src, gain: g, i };
+  return true;
+}
+
+function voiceTick(last, fresh, vis) {
+  if (voice.libVer !== libVersion) syncClips();
+  const n = voice.clips.length;
+  zones.n = n; zones.names = voice.clips.map((c) => c.name);
+
+  // zone range: AUTO = min/max of the last 10 minutes; otherwise the numbers typed in LOW / HIGH
+  let lo, hi;
+  if ($('vauto').checked) {
+    lo = Infinity; hi = -Infinity;
+    const since = performance.now() - AUTO_MS;
+    for (let i = series.length - 1; i >= 0 && series[i].t >= since; i--) { lo = Math.min(lo, series[i].r); hi = Math.max(hi, series[i].r); }
+    if (!isFinite(lo) || hi - lo < 1) { lo = (last ? last.r : 0) - 0.5; hi = lo + 1; }
+    // show the live range in the boxes so you can start adjusting from it
+    for (const [id, v] of [['vlo', Math.floor(lo)], ['vhi', Math.ceil(hi)]]) if (document.activeElement !== $(id)) $(id).value = v;
+  } else { lo = +$('vlo').value; hi = +$('vhi').value; if (!(hi > lo)) hi = lo + 1; }
+  zones.lo = lo; zones.hi = hi;
+
+  if (!voice.on) { $('vclip').textContent = $('vzone').textContent = '—'; return; }
+  if (!n) { $('vstat').textContent = 'ON · LIBRARY EMPTY'; $('vclip').textContent = $('vzone').textContent = '—'; return; }
+
+  if (!last || !fresh) {                              // no live signal: fade out
+    if (voice.play) { stopPlay(voice.play, FADE); voice.play = null; voice.cur = -1; zones.cur = -1; }
+    $('vstat').textContent = 'ON · WAITING FOR SIGNAL'; $('vclip').textContent = $('vzone').textContent = '—'; return;
+  }
+
+  const f = Math.min(0.9999, Math.max(0, (last.r - lo) / (hi - lo))) * n;       // position in zone units
+  let z = Math.floor(f);
+  if (voice.cur >= 0 && voice.cur < n && Math.abs(f - (voice.cur + 0.5)) < 0.5 + 0.1) z = voice.cur;   // hysteresis
+  if (z !== voice.cur || !voice.play) { if (startClip(z)) voice.cur = z; }
+  zones.cur = voice.cur;
+  $('vstat').textContent = 'ON · PLAYING';
+  $('vclip').textContent = voice.cur >= 0 ? voice.clips[voice.cur].name : '—';
+  $('vzone').textContent = voice.cur >= 0 ? (voice.cur + 1) + ' / ' + n : '—';
+}
+
+$('voice').onclick = async () => {
+  if (!voice.on) {
+    if (!voice.ctx) {
+      voice.ctx = new AudioContext(); voice.master = voice.ctx.createGain();
+      voice.master.gain.value = +$('vol').value; voice.master.connect(voice.ctx.destination);
+    }
+    await voice.ctx.resume();
+    voice.on = true; $('voice').textContent = 'VOICE: ON';
+    $('vmsg').textContent = 'The library is split into one resistance zone per clip (vowel_1 lowest). When the reading crosses into another zone, that clip takes over, looped. Clips you record appear here immediately.';
+    await syncClips();
+  } else {
+    voice.on = false; $('voice').textContent = 'VOICE: OFF'; $('vstat').textContent = 'OFF';
+    stopPlay(voice.play, 0.1); voice.play = null; voice.cur = -1; zones.cur = -1;
+  }
+};
+$('vol').oninput = () => { if (voice.master) voice.master.gain.value = +$('vol').value; };
+// typing in LOW / HIGH switches to manual scale
+['vlo', 'vhi'].forEach((id) => ($(id).oninput = () => { $('vauto').checked = false; }));
+
+// SAVE SCALE: keep the current LOW / HIGH (and mode) across reloads
+const SCALE_KEY = 'mycopulse.scale';
+$('vsave').onclick = () => {
+  const lo = +$('vlo').value, hi = +$('vhi').value;
+  if (!(hi > lo)) { $('vsaved').textContent = 'HIGH must be above LOW'; return; }
+  $('vauto').checked = false;                       // a saved scale is a fixed scale
+  try { localStorage.setItem(SCALE_KEY, JSON.stringify({ lo, hi })); $('vsaved').textContent = `SAVED ${lo}–${hi} Ω`; }
+  catch { $('vsaved').textContent = 'Could not save (storage blocked)'; }
+};
+$('vclr').onclick = () => {
+  try { localStorage.removeItem(SCALE_KEY); } catch {}
+  $('vauto').checked = true; $('vsaved').textContent = 'saved scale cleared · AUTO';
+};
+try {
+  const s = JSON.parse(localStorage.getItem(SCALE_KEY) || 'null');
+  if (s && s.hi > s.lo) { $('vlo').value = s.lo; $('vhi').value = s.hi; $('vauto').checked = false; $('vsaved').textContent = `LOADED ${s.lo}–${s.hi} Ω`; }
+} catch {}
+
+// ═════════════════════════════ RECORDER ═════════════════════════════
+const DB = 'mycopulse', STORE = 'clips', REC_MS = 3000;
+let db = null;
+
+function openDB() {
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open(DB, 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
+    rq.onsuccess = () => res(rq.result);
+    rq.onerror = () => rej(rq.error);
+  });
+}
+const tx = (mode) => db.transaction(STORE, mode).objectStore(STORE);
+const req = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+
+async function allClips() { return db ? (await req(tx('readonly').getAll())).sort((a, b) => a.index - b.index) : memClips; }
+const memClips = [];   // fallback if IndexedDB is unavailable (lost on reload)
+
+async function nextIndex() {
+  const clips = await allClips();
+  let n = 0;
+  try { n = +localStorage.getItem('mycopulse.vowelCounter') || 0; } catch {}
+  return Math.max(n, ...clips.map((c) => c.index), 0) + 1;   // never reuses a number
+}
+
+async function saveClip(blob, ms, source) {
+  const index = await nextIndex();
+  const clip = { index, name: 'vowel_' + index, blob, type: blob.type, ms, created: Date.now(), source };
+  if (db) await req(tx('readwrite').add(clip)); else memClips.push(clip);
+  try { localStorage.setItem('mycopulse.vowelCounter', String(index)); } catch {}
+  libVersion++;
+  return clip;
+}
+
+const ext = (type) => /ogg/.test(type) ? 'ogg' : /mp4|m4a|aac/.test(type) ? 'm4a' : /wav|wave/.test(type) ? 'wav'
+  : /mpeg|mp3/.test(type) ? 'mp3' : /flac/.test(type) ? 'flac' : 'webm';
+
+// ───── upload ─────
+const MAX_UP = 25 * 1024 * 1024;
+async function importFiles(files) {
+  const msg = $('upmsg'); msg.className = 'msg'; msg.textContent = '';
+  const ok = [], bad = [];
+  for (const f of [...files]) {
+    if (f.size > MAX_UP) { bad.push(f.name + ' (over 25 MB)'); continue; }
+    try {
+      const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, 44100);
+      const dec = await ac.decodeAudioData(await f.arrayBuffer());          // also validates the file
+      const blob = f.type ? f : new Blob([f], { type: 'audio/' + (f.name.split('.').pop() || 'wav') });
+      const clip = await saveClip(blob, Math.round(dec.duration * 1000), f.name);
+      ok.push(clip.name + ' ← ' + f.name);
+    } catch { bad.push(f.name + ' (not a readable audio file)'); }
+  }
+  msg.className = 'msg' + (bad.length ? ' err' : '');
+  msg.textContent = (ok.length ? 'Added: ' + ok.join(', ') + '. ' : '') + (bad.length ? 'Skipped: ' + bad.join(', ') + '.' : '');
+  refreshLibrary();
+}
+$('upbtn').onclick = () => $('upfile').click();
+$('upfile').onchange = async (e) => { await importFiles(e.target.files); e.target.value = ''; };
+const dropBox = $('lib').closest('.box');
+dropBox.addEventListener('dragover', (e) => { e.preventDefault(); dropBox.style.outline = '2px solid var(--acc)'; });
+dropBox.addEventListener('dragleave', () => { dropBox.style.outline = ''; });
+dropBox.addEventListener('drop', (e) => { e.preventDefault(); dropBox.style.outline = ''; importFiles(e.dataTransfer.files); });
+const kb = (n) => (n / 1024).toFixed(1) + ' kB';
+let playing = null;
+
+async function refreshLibrary() {
+  const clips = await allClips();
+  $('libcount').textContent = clips.length + (clips.length === 1 ? ' FILE' : ' FILES');
+  $('libempty').hidden = clips.length > 0;
+  $('nextname').textContent = 'NEXT: vowel_' + (await nextIndex());
+  const body = $('lib'); body.textContent = '';
+  clips.forEach((c) => {
+    const tr = document.createElement('tr');
+    const cell = (txt, cls) => { const td = document.createElement('td'); td.textContent = txt; if (cls) td.className = cls; tr.append(td); return td; };
+    cell(c.name + '.' + ext(c.type));
+    cell(c.source || 'mic');
+    cell((c.ms / 1000).toFixed(1) + ' s', 'n');
+    cell(kb(c.blob.size), 'n');
+    cell(new Date(c.created).toLocaleString(), 'n');
+    const act = cell('', 'act');
+    const btn = (label, fn) => { const b = document.createElement('button'); b.className = 'b'; b.textContent = label; b.onclick = fn; act.append(b); return b; };
+    const pb = btn('PLAY', () => {
+      const wasMine = playing && playing.btn === pb;
+      if (playing) { playing.a.pause(); playing.btn.textContent = 'PLAY'; playing = null; }
+      if (wasMine) return;
+      const a = new Audio(URL.createObjectURL(c.blob));
+      playing = { a, btn: pb }; pb.textContent = 'STOP';
+      a.onended = () => { pb.textContent = 'PLAY'; if (playing && playing.a === a) playing = null; };
+      a.play();
+    });
+    btn('DOWNLOAD', () => {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(c.blob);
+      a.download = c.name + '.' + ext(c.type); a.click(); URL.revokeObjectURL(a.href);
+    });
+    btn('DELETE', async () => {
+      if (db) await req(tx('readwrite').delete(c.id)); else memClips.splice(memClips.indexOf(c), 1);
+      libVersion++; voice.bufs.delete(c.index);
+      refreshLibrary();
+    });
+    body.append(tr);
+  });
+}
+
+// ───── recording ─────
+let recording = false;
+$('recbtn').onclick = async () => {
+  if (recording) return;
+  const msg = $('recmsg'); msg.className = 'msg'; msg.textContent = '';
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    msg.className = 'msg err'; msg.textContent = 'Audio recording is not supported in this browser.'; return;
+  }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+  catch (e) { msg.className = 'msg err'; msg.textContent = 'Microphone unavailable: ' + e.message; return; }
+
+  recording = true; $('recbtn').disabled = true;
+  const rec = new MediaRecorder(stream), chunks = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+
+  // input level meter + countdown
+  const ac = new AudioContext(), an = ac.createAnalyser(); an.fftSize = 1024;
+  ac.createMediaStreamSource(stream).connect(an);
+  const buf = new Float32Array(an.fftSize);
+  const t0 = performance.now();
+  let raf;
+  const tick = () => {
+    an.getFloatTimeDomainData(buf);
+    let s = 0; for (const v of buf) s += v * v;
+    $('inlvl').style.width = Math.min(100, Math.sqrt(s / buf.length) * 300) + '%';
+    $('count').textContent = Math.max(0, (REC_MS - (performance.now() - t0)) / 1000).toFixed(1);
+    raf = requestAnimationFrame(tick);
+  };
+  tick();
+  msg.textContent = 'RECORDING…';
+
+  const done = new Promise((r) => (rec.onstop = r));
+  rec.start();
+  setTimeout(() => rec.state !== 'inactive' && rec.stop(), REC_MS);
+  await done;
+
+  cancelAnimationFrame(raf); stream.getTracks().forEach((t) => t.stop()); ac.close();
+  $('inlvl').style.width = '0'; $('count').textContent = (REC_MS / 1000).toFixed(1);
+  try {
+    const blob = new Blob(chunks, { type: rec.mimeType });
+    const clip = await saveClip(blob, REC_MS);
+    msg.textContent = 'Saved ' + clip.name + '.' + ext(clip.type) + ' (' + kb(blob.size) + ')';
+  } catch (e) { msg.className = 'msg err'; msg.textContent = 'Save failed: ' + e.message; }
+  recording = false; $('recbtn').disabled = false;
+  refreshLibrary();
+};
+
+// ───── init ─────
+openDB().then((d) => { db = d; refreshLibrary(); }).catch(() => {
+  $('recmsg').className = 'msg err';
+  $('recmsg').textContent = 'Persistent storage unavailable: recordings will be lost on reload.';
+  refreshLibrary();
+});
+setSource(null);
 </script>
 </body>
 </html>
