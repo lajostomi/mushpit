@@ -113,6 +113,21 @@
   </div>
 
   <div class="box">
+    <div class="t"><span>FILTER · SMOOTHING</span><span id="fstat">ON</span></div>
+    <div class="readout">
+      <div><small>SMOOTHED</small><div class="stat" id="fsm">—</div></div>
+      <div><small>TIME CONSTANT</small><div class="stat" id="ftau">—</div></div>
+    </div>
+    <div class="ctl">
+      <button class="b on" id="fon">SMOOTHING: ON</button>
+      <label>AMOUNT <input type="range" id="famt" min="0" max="100" step="1" value="60" style="width:240px"></label>
+      <label><input type="checkbox" id="fdesp" checked> REMOVE SPIKES (median of 5)</label>
+      <label><input type="checkbox" id="fshow" checked> SHOW RAW TRACE</label>
+    </div>
+    <div class="msg" style="padding-top:8px">One filter feeds everything: the waveform, the zones, the voices and the instruments. AMOUNT sets how slowly the curve follows the reading (time constant 0.1 s – 10 s). More smoothing = calmer, steadier vowels but a slower reaction. The big LIVE number always shows the raw reading.</div>
+  </div>
+
+  <div class="box">
     <div class="t"><span>VOICE · RESISTANCE → LIBRARY</span><span id="vstat">OFF</span></div>
     <div class="readout">
       <div><small>ACTIVE CLIP</small><div class="stat" id="vclip">—</div></div>
@@ -127,7 +142,6 @@
       <label><input type="checkbox" id="vauto" checked> AUTO SCALE over last</label>
       <select id="vwin"><option value="1800">30 min</option><option value="600" selected>10 min</option><option value="300">5 min</option><option value="120">2 min</option><option value="60">1 min</option><option value="30">30 s</option></select>
       <label>ZONE SPACING <select id="vspace"><option value="pct" selected>EQUAL TIME (adapts to data)</option><option value="lin">EQUAL Ω (linear)</option></select></label>
-      <label><input type="checkbox" id="vdesp" checked> DESPIKE (median of 5)</label>
       <label><input type="checkbox" id="vact" checked> ACTIVITY → LOUDNESS</label>
       <label>IGNORE SPIKES <select id="vtrim"><option value="0">none (true min–max)</option><option value="2">2%</option><option value="5" selected>5%</option><option value="10">10%</option></select></label>
       <label>LOW <input type="number" id="vlo" value="5000" step="100" style="width:90px"> Ω</label>
@@ -252,9 +266,28 @@ let total = 0;
 const fmt = (r) => (r >= 100000 ? r.toFixed(0) : r.toFixed(1));
 const fmtOhm = (r) => (r >= 1e6 ? (r / 1e6).toFixed(3) + ' MΩ' : r >= 1000 ? (r / 1000).toFixed(2) + ' kΩ' : r.toFixed(1) + ' Ω');
 
+// filter: raw -> (median of last 5, removes spikes) -> (exponential smoothing, adjustable time constant).
+// Each point keeps its raw value, so changing the settings re-filters the whole history.
+const filterOn = () => $('fon').classList.contains('on');
+const tauSec = () => 0.1 * Math.pow(100, +$('famt').value / 100);          // slider 0..100 -> 0.1 .. 10 s
+function filt(i, prev) {
+  const p = series[i];
+  let v = p.raw;
+  if ($('fdesp').checked) { const w = []; for (let k = Math.max(0, i - 4); k <= i; k++) w.push(series[k].raw); v = median(w); }
+  if (filterOn() && prev) { const dt = Math.max(0.001, (p.t - prev.t) / 1000); v = prev.r + (v - prev.r) * (1 - Math.exp(-dt / tauSec())); }
+  return v;
+}
+function refilter() {
+  for (let i = 0; i < series.length; i++) series[i].r = filt(i, series[i - 1]);
+  $('ftau').textContent = filterOn() ? tauSec().toFixed(1) + ' s' : 'off';
+  $('fstat').textContent = filterOn() ? 'ON' : 'OFF';
+  $('famt').disabled = !filterOn();
+}
 function push(r) {
   if (!isFinite(r)) return;
-  series.push({ t: performance.now(), r });
+  series.push({ t: performance.now(), raw: r, r });
+  const i = series.length - 1;
+  series[i].r = filt(i, series[i - 1]);
   if (series.length > MAXKEEP) series.shift();
   total++;
 }
@@ -329,12 +362,16 @@ $('clear').onclick = () => { series = []; total = 0; };
 $('csv').onclick = () => {
   if (!series.length) return;
   const t0 = series[0].t;
-  const rows = ['seconds,ohms', ...series.map((p) => ((p.t - t0) / 1000).toFixed(3) + ',' + p.r)];
+  const rows = ['seconds,raw_ohms,filtered_ohms', ...series.map((p) => ((p.t - t0) / 1000).toFixed(3) + ',' + p.raw + ',' + p.r.toFixed(2))];
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' }));
   a.download = 'mushpit_' + new Date().toISOString().replace(/[:.]/g, '-') + '.csv';
   a.click(); URL.revokeObjectURL(a.href);
 };
+
+$('fon').onclick = () => { $('fon').classList.toggle('on'); $('fon').textContent = 'SMOOTHING: ' + (filterOn() ? 'ON' : 'OFF'); refilter(); };
+['famt', 'fdesp'].forEach((id) => ($(id).oninput = refilter));
+refilter();
 
 // ───── scope ─────
 const cv = $('scope'), cx = cv.getContext('2d');
@@ -432,6 +469,11 @@ function draw() {
   // trace
   if (vis.length) {
     cx.save(); cx.beginPath(); cx.rect(padL, 0, pw, ph); cx.clip();
+    if ($('fshow').checked && (filterOn() || $('fdesp').checked)) {
+      cx.strokeStyle = 'rgba(255,255,255,.28)'; cx.lineWidth = 1; cx.beginPath();
+      vis.forEach((p, i) => { const x = padL + ((p.t - t0) / (W * 1000)) * pw, y = yv(p.raw); i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+      cx.stroke();
+    }
     cx.strokeStyle = '#fff'; cx.lineWidth = 2; cx.lineJoin = 'round'; cx.beginPath();
     vis.forEach((p, i) => {
       const x = padL + ((p.t - t0) / (W * 1000)) * pw, y = yv(p.r);
@@ -454,9 +496,10 @@ requestAnimationFrame(draw);
 // numbers (refreshed 10×/s)
 setInterval(() => {
   const rawLast = series[series.length - 1];
-  const last = rawLast && $('vdesp').checked ? { t: rawLast.t, r: median(series.slice(-5).map((p) => p.r)) } : rawLast;
+  const last = rawLast;                                   // already filtered (see push)
   const fresh = rawLast && performance.now() - rawLast.t < 2500;
-  $('live').textContent = rawLast ? fmt(rawLast.r) : '—';
+  $('live').textContent = rawLast ? fmt(rawLast.raw) : '—';
+  $('fsm').textContent = rawLast ? fmt(rawLast.r) + ' Ω' : '—';
   $('live').style.opacity = fresh || !rawLast ? 1 : .35;     // dim when the stream stalls
   const W = +$('win').value * 1000, now = performance.now();
   const vis = series.filter((p) => p.t >= now - W);
