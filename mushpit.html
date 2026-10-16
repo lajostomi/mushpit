@@ -61,7 +61,7 @@
 
   canvas { display:block; width:100%; height:320px; background:var(--screen); border-top:2px solid #000; }
   .ctl { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; padding:8px 10px; border-top:2px solid #000; font-size:18px; }
-  input[type=number], select { background:var(--paper); border:2px solid #000; padding:0 4px; }
+  input[type=number], input[type=text], select { background:var(--paper); border:2px solid #000; padding:0 4px; }
   input[type=checkbox] { accent-color:#000; width:15px; height:15px; vertical-align:-2px; }
   input[type=range] { -webkit-appearance:none; appearance:none; height:16px; background:var(--paper); border:2px solid #000; vertical-align:middle; }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:12px; height:20px; background:#000; }
@@ -83,6 +83,8 @@
   .meterbar i { position:absolute; inset:0 auto 0 0; width:0; background:var(--lav); border-right:2px solid #000; }
   .count { font-size:48px; line-height:1; width:110px; font-variant-numeric:tabular-nums; }
   .msg { padding:0 10px 10px; color:var(--mut); min-height:1.2em; }
+  #chopview { height:150px; cursor:pointer; }
+  .stg { background:#000; color:#fff; padding:0 8px; letter-spacing:.06em; font-weight:normal; }
   .err { background:var(--pink); color:#000; padding:0 6px; }
 </style>
 </head>
@@ -93,6 +95,8 @@
     <button role="tab" id="tab-mon" aria-selected="true">MONITOR</button>
     <button role="tab" id="tab-rec" aria-selected="false">RECORDER</button>
     <button role="tab" id="tab-inst" aria-selected="false">INSTRUMENTS</button>
+    <button role="tab" id="tab-chop" aria-selected="false">CHOP</button>
+    <button role="tab" id="tab-data" aria-selected="false">DATA</button>
   </nav>
   <div id="conn"><span class="dot" id="dot"></span><span id="connTxt">NO SIGNAL</span></div>
 </header>
@@ -113,18 +117,50 @@
   </div>
 
   <div class="box">
-    <div class="t"><span>FILTER · SMOOTHING</span><span id="fstat">ON</span></div>
+    <div class="t"><span>SIGNAL FILTER · 1 SMOOTH → 2 SCALE → 3 HYSTERESIS</span><span id="fstat">ON</span></div>
     <div class="readout">
       <div><small>SMOOTHED</small><div class="stat" id="fsm">—</div></div>
-      <div><small>TIME CONSTANT</small><div class="stat" id="ftau">—</div></div>
+      <div><small>FILTER LENGTH</small><div class="stat" id="ftau">—</div></div>
+      <div><small>MAPPED 0–100%</small><div class="stat" id="pmap">—</div></div>
+      <div><small>ZONE</small><div class="stat" id="pzone">—</div></div>
     </div>
+    <div style="padding:0 10px 10px"><div class="meterbar" title="reading mapped onto the scale (0% = low edge, 100% = high edge)"><i id="pbar"></i></div></div>
+
     <div class="ctl">
+      <b class="stg">1 · SMOOTHING</b>
       <button class="b on" id="fon">SMOOTHING: ON</button>
-      <label>AMOUNT <input type="range" id="famt" min="0" max="100" step="1" value="60" style="width:240px"></label>
-      <label><input type="checkbox" id="fdesp" checked> REMOVE SPIKES (median of 5)</label>
+      <label>METHOD <select id="fmode"><option value="ma" selected>MOVING AVERAGE</option><option value="ema">EXPONENTIAL</option></select></label>
+      <label>WINDOW <input type="range" id="fwinn" min="1" max="60" step="1" value="8" style="width:160px"> <span id="fwinlab">—</span></label>
+      <label>AMOUNT <input type="range" id="famt" min="0" max="100" step="1" value="60" style="width:160px"></label>
+      <label><input type="checkbox" id="fdesp" checked> REMOVE SPIKES FIRST (median of 5)</label>
       <label><input type="checkbox" id="fshow" checked> SHOW RAW TRACE</label>
     </div>
-    <div class="msg" style="padding-top:8px">One filter feeds everything: the waveform, the zones, the voices and the instruments. AMOUNT sets how slowly the curve follows the reading (time constant 0.1 s – 10 s). More smoothing = calmer, steadier vowels but a slower reaction. The big LIVE number always shows the raw reading.</div>
+    <div class="ctl">
+      <b class="stg">2 · DYNAMIC SCALING</b>
+      <label><input type="checkbox" id="vauto" checked> AUTO SCALE over last</label>
+      <select id="vwin"><option value="1800">30 min</option><option value="600" selected>10 min</option><option value="300">5 min</option><option value="120">2 min</option><option value="60">1 min</option><option value="30">30 s</option><option value="10">10 s</option><option value="5">5 s</option></select>
+      <label>RE-SCALE <select id="vrefresh"><option value="0" selected>continuously</option><option value="5">every 5 s</option><option value="15">every 15 s</option><option value="30">every 30 s</option><option value="60">every 60 s</option></select></label>
+      <span id="vnext" style="color:var(--mut)"></span>
+      <label>IGNORE SPIKES <select id="vtrim"><option value="0">none (true min–max)</option><option value="2">2%</option><option value="5" selected>5%</option><option value="10">10%</option></select></label>
+      <label>ZONE SPACING <select id="vspace"><option value="pct" selected>EQUAL TIME (adapts to data)</option><option value="lin">EQUAL Ω (linear)</option></select></label>
+      <label>LOW <input type="number" id="vlo" value="5000" step="100" style="width:90px"> Ω</label>
+      <label>HIGH <input type="number" id="vhi" value="20000" step="100" style="width:90px"> Ω</label>
+      <button class="b" id="vsave" title="store LOW / HIGH and use them as a fixed scale">SAVE SCALE</button>
+      <button class="b" id="vclr" title="forget the saved scale and go back to auto">RESET TO AUTO</button>
+      <span id="vsaved" style="color:var(--mut)"></span>
+    </div>
+    <div class="ctl">
+      <b class="stg">3 · HYSTERESIS</b>
+      <label>EDGE BUFFER <input type="number" id="vhyst" value="6" min="0" max="45" step="1" style="width:55px"> %</label>
+      <label>MIN DWELL <input type="number" id="vdwell" value="250" min="0" max="5000" step="50" style="width:70px"> ms</label>
+      <span style="color:var(--mut)">buffer: the reading must go this far past a zone edge before the clip changes · dwell: a clip plays at least this long before the next change</span>
+    </div>
+    <div class="ctl">
+      <button class="b" id="ftune" title="measure the last 10 minutes and set smoothing, spike removal, edge buffer and dwell">AUTO-TUNE FROM LAST 10 MIN</button>
+      <label><input type="checkbox" id="fkeep"> KEEP TUNING (every 30 s)</label>
+      <span id="ftunemsg" style="color:var(--mut)"></span>
+    </div>
+    <div class="msg" style="padding-top:8px">The same pipeline feeds the waveform, the zones, the voices and the instruments. The big LIVE number always shows the raw reading.</div>
   </div>
 
   <div class="box">
@@ -139,16 +175,11 @@
       <button class="b" id="voice">VOICE: OFF</button>
       <label>VOLUME <input type="range" id="vol" min="0" max="1" step="0.01" value="0.8"></label>
       <label>BEND ± <input type="number" id="vbend" value="4" min="0" max="12" step="1" style="width:50px"> st</label>
-      <label><input type="checkbox" id="vauto" checked> AUTO SCALE over last</label>
-      <select id="vwin"><option value="1800">30 min</option><option value="600" selected>10 min</option><option value="300">5 min</option><option value="120">2 min</option><option value="60">1 min</option><option value="30">30 s</option></select>
-      <label>ZONE SPACING <select id="vspace"><option value="pct" selected>EQUAL TIME (adapts to data)</option><option value="lin">EQUAL Ω (linear)</option></select></label>
       <label><input type="checkbox" id="vact" checked> ACTIVITY → LOUDNESS</label>
-      <label>IGNORE SPIKES <select id="vtrim"><option value="0">none (true min–max)</option><option value="2">2%</option><option value="5" selected>5%</option><option value="10">10%</option></select></label>
-      <label>LOW <input type="number" id="vlo" value="5000" step="100" style="width:90px"> Ω</label>
-      <label>HIGH <input type="number" id="vhi" value="20000" step="100" style="width:90px"> Ω</label>
-      <button class="b" id="vsave" title="store LOW / HIGH and use them as a fixed scale">SAVE SCALE</button>
-      <button class="b" id="vclr" title="forget the saved scale and go back to auto">RESET TO AUTO</button>
-      <span id="vsaved" style="color:var(--mut)"></span>
+      <label>SOUNDS FROM FOLDER <select id="vfolder"></select></label>
+      <label>ZONE ORDER <select id="vorder"><option value="pitch" selected>BY PITCH (low → high)</option><option value="index">BY NUMBER (vowel_N)</option></select></label>
+      <label><input type="checkbox" id="vloud" checked> START AT LOUDEST PART</label>
+      <label>LOOP <select id="vloudmode"><option value="region" selected>LOUD REGION ONLY</option><option value="tail">LOUDEST PART → END</option></select></label>
     </div>
     <div class="msg" id="vmsg" style="padding-top:8px">The library is split into one resistance zone per clip (vowel_1 lowest). When the reading crosses into another zone, that clip takes over, looped. Clips you record appear here immediately.</div>
   </div>
@@ -184,14 +215,24 @@
 
   <div class="box">
     <div class="t"><span>LIBRARY</span><span id="libcount">0 FILES</span></div>
-    <div class="ctl" style="border-top:0;border-bottom:1px solid var(--line)">
+    <div class="ctl" style="border-top:0">
+      <b class="stg">FOLDER</b>
+      <select id="libfolder"></select>
+      <input type="text" id="newfolder" placeholder="folder name" maxlength="40" style="width:170px">
+      <button class="b" id="newfbtn">CREATE FOLDER</button>
+      <button class="b" id="renfbtn" title="rename the selected folder to the name typed in the box">RENAME</button>
+      <button class="b" id="delfbtn" title="delete the selected folder (its clips move to default)">DELETE FOLDER</button>
+      <span style="color:var(--mut)">new recordings and uploads go into the selected folder</span>
+    </div>
+    <div class="ctl" style="border-bottom:1px solid var(--line)">
       <button class="b" id="upbtn">UPLOAD AUDIO FILES</button>
+      <label>ORDER <select id="vorder2"><option value="pitch" selected>BY PITCH (low → high)</option><option value="index">BY NUMBER (vowel_N)</option></select></label>
       <input type="file" id="upfile" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm,.flac,.aac" multiple hidden>
       <span style="color:var(--mut)">or drop files on this box · wav, mp3, m4a, ogg, webm, flac · max 25 MB each · saved as vowel_N in order</span>
     </div>
     <div class="msg" id="upmsg" style="padding-top:8px"></div>
     <table>
-      <thead><tr><th>NAME</th><th>SOURCE</th><th>LENGTH</th><th>SIZE</th><th>ADDED</th><th></th></tr></thead>
+      <thead><tr><th>NAME</th><th>FOLDER</th><th>SOURCE</th><th>LENGTH</th><th>LOUDEST PART</th><th>PITCH</th><th>SIZE</th><th>ADDED</th><th></th></tr></thead>
       <tbody id="lib"></tbody>
     </table>
     <div class="empty" id="libempty">No recordings yet.</div>
@@ -235,6 +276,80 @@
     <div class="empty" id="iempty">No instrument samples yet.</div>
   </div>
 </section>
+
+<!-- ═════════════ DATA ═════════════ -->
+<section id="datasec" hidden>
+  <div class="box">
+    <div class="t"><span>RECORD READINGS</span><span id="rstat">IDLE</span></div>
+    <div class="readout">
+      <div><small>READINGS</small><div class="stat" id="rn">—</div></div>
+      <div><small>DURATION</small><div class="stat" id="rdur">—</div></div>
+    </div>
+    <div class="ctl">
+      <button class="b rec" id="rtoggle">● RECORD DATA</button>
+      <span style="color:var(--mut)">Stores the raw readings (before smoothing) from the Arduino or the simulation. Kept in this browser, autosaved every 30 s.</span>
+    </div>
+    <div class="msg" id="rmsg" style="padding-top:8px"></div>
+  </div>
+
+  <div class="box">
+    <div class="t"><span>SESSIONS</span><span id="scount2">0 SESSIONS</span></div>
+    <table>
+      <thead><tr><th>NAME</th><th>LENGTH</th><th>READINGS</th><th>RANGE</th><th>RECORDED</th><th></th></tr></thead>
+      <tbody id="sessbody"></tbody>
+    </table>
+    <div class="empty" id="sempty">No recordings yet. Press RECORD DATA while the Arduino is connected.</div>
+  </div>
+
+  <div class="box">
+    <div class="t"><span>ANALYSIS · AUTO-TUNE</span><span id="astat">—</span></div>
+    <div class="msg" id="areport" style="padding-top:10px;white-space:pre-wrap">Press ANALYSE on a session, or AUTO-TUNE in the FILTER box on the Monitor tab. The analysis measures the jitter, the spikes and how fast the reading really moves, then picks smoothing, spike removal and edge buffer so the voices follow real movement and ignore noise.</div>
+    <div class="ctl"><button class="b" id="aapply" disabled>APPLY THESE SETTINGS</button></div>
+  </div>
+</section>
+
+<!-- ═════════════ CHOP ═════════════ -->
+<section id="chopsec" hidden>
+  <div class="box" id="chopsrc">
+    <div class="t"><span>CHOP · TALK → 1–2 s SAMPLES</span><span id="chcount">0 SAMPLES</span></div>
+    <div class="ctl" style="border-top:0">
+      <button class="b rec" id="chrec">● RECORD TALK</button>
+      <button class="b" id="chupbtn">UPLOAD AUDIO FILE</button>
+      <input type="file" id="chfile" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm,.flac,.aac" hidden>
+      <div class="meterbar" style="flex:1;min-width:140px" title="input level"><i id="chlvl"></i></div>
+    </div>
+    <div class="msg" id="chmsg" style="padding-top:6px">Record yourself talking for a minute or more (up to 5 min), or drop an audio file here. It is cut into 1–2 s human-sound samples automatically. Click a band in the waveform to listen, shift-click to select or deselect it.</div>
+    <canvas id="chopview"></canvas>
+    <div class="ctl">
+      <b class="stg">CUTTING</b>
+      <label>MIN <input type="number" id="chmin" value="1" min="0.3" max="5" step="0.1" style="width:60px"> s</label>
+      <label>MAX <input type="number" id="chmax" value="2" min="0.5" max="8" step="0.1" style="width:60px"> s</label>
+      <label>SENSITIVITY <input type="range" id="chsens" min="3" max="25" step="1" value="8" style="width:140px"> <span id="chsenslab">8 dB</span></label>
+      <label>JOIN GAPS UNDER <input type="number" id="chgap" value="150" min="0" max="1000" step="25" style="width:70px"> ms</label>
+      <label>ORDER <select id="chorder"><option value="time">AS SPOKEN</option><option value="pitch" selected>PITCH (low → high)</option><option value="bright">DARK → BRIGHT (oo … ee)</option><option value="loud">QUIET → LOUD</option></select></label>
+      <label><input type="checkbox" id="chnorm" checked> NORMALISE LEVEL</label>
+    </div>
+  </div>
+
+  <div class="box">
+    <div class="t"><span>SAMPLES</span><span>ORDER = ZONE ORDER (first = lowest resistance)</span></div>
+    <div class="ctl" style="border-top:0">
+      <button class="b" id="chall">SELECT ALL</button>
+      <button class="b" id="chnone">SELECT NONE</button>
+      <button class="b" id="chpick">PICK</button><input type="number" id="chpickn" value="8" min="1" max="60" style="width:55px"><span style="color:var(--mut)">evenly spread</span>
+      <label>SAVE TO FOLDER <select id="chfolder"></select></label>
+      <input type="text" id="chnewf" placeholder="new folder" maxlength="40" style="width:140px">
+      <button class="b" id="chnewbtn">CREATE</button>
+      <button class="b" id="chaddv">ADD SELECTED TO VOICE LIBRARY</button>
+      <button class="b" id="chaddi">ADD SELECTED TO INSTRUMENTS</button>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>ON</th><th>START</th><th>LENGTH</th><th>PEAK</th><th>BRIGHTNESS</th><th>PITCH</th><th></th></tr></thead>
+      <tbody id="chbody"></tbody>
+    </table>
+    <div class="empty" id="chempty">No samples yet.</div>
+  </div>
+</section>
 </main>
 
 <script>
@@ -246,15 +361,23 @@ function showTab(name) {
   $('mon').hidden = name !== 'mon';
   $('recsec').hidden = name !== 'rec';
   $('instsec').hidden = name !== 'inst';
+  $('datasec').hidden = name !== 'data';
+  $('chopsec').hidden = name !== 'chop';
+  $('tab-chop').setAttribute('aria-selected', name === 'chop');
+  $('tab-data').setAttribute('aria-selected', name === 'data');
   $('tab-mon').setAttribute('aria-selected', name === 'mon');
   $('tab-rec').setAttribute('aria-selected', name === 'rec');
   $('tab-inst').setAttribute('aria-selected', name === 'inst');
   if (name === 'rec') refreshLibrary();
   if (name === 'inst') refreshInst();
+  if (name === 'data') refreshSessions();
+  if (name === 'chop') { fitChop(); rebuildFolders(); }
 }
 $('tab-mon').onclick = () => showTab('mon');
 $('tab-rec').onclick = () => showTab('rec');
 $('tab-inst').onclick = () => showTab('inst');
+$('tab-data').onclick = () => showTab('data');
+$('tab-chop').onclick = () => showTab('chop');
 
 // ═════════════════════════════ MONITOR ═════════════════════════════
 const MAXKEEP = 20000;          // samples kept in memory
@@ -274,14 +397,24 @@ function filt(i, prev) {
   const p = series[i];
   let v = p.raw;
   if ($('fdesp').checked) { const w = []; for (let k = Math.max(0, i - 4); k <= i; k++) w.push(series[k].raw); v = median(w); }
-  if (filterOn() && prev) { const dt = Math.max(0.001, (p.t - prev.t) / 1000); v = prev.r + (v - prev.r) * (1 - Math.exp(-dt / tauSec())); }
+  p.med = v;                                                     // after spike removal, before smoothing
+  if (filterOn()) {
+    if ($('fmode').value === 'ma') {                             // moving average of the last N readings
+      const N = +$('fwinn').value; let s = 0, c = 0;
+      for (let k = Math.max(0, i - N + 1); k <= i; k++) { s += series[k].med ?? series[k].raw; c++; }
+      v = s / c;
+    } else if (prev) { const dt = Math.max(0.001, (p.t - prev.t) / 1000); v = prev.r + (v - prev.r) * (1 - Math.exp(-dt / tauSec())); }   // exponential
+  }
   return v;
 }
 function refilter() {
   for (let i = 0; i < series.length; i++) series[i].r = filt(i, series[i - 1]);
-  $('ftau').textContent = filterOn() ? tauSec().toFixed(1) + ' s' : 'off';
+  const ma = $('fmode').value === 'ma', N = +$('fwinn').value, dtm = series.length > 2 ? Math.max(0.05, (series[series.length - 1].t - series[0].t) / 1000 / (series.length - 1)) : 0.2;
+  $('ftau').textContent = !filterOn() ? 'off' : ma ? N + ' readings' : tauSec().toFixed(1) + ' s';
+  $('fwinlab').textContent = N + (N === 1 ? ' reading' : ' readings') + ' ≈ ' + (N * dtm).toFixed(1) + ' s';
   $('fstat').textContent = filterOn() ? 'ON' : 'OFF';
-  $('famt').disabled = !filterOn();
+  $('famt').disabled = !filterOn() || ma;
+  $('fwinn').disabled = !filterOn() || !ma;
 }
 function push(r) {
   if (!isFinite(r)) return;
@@ -290,12 +423,14 @@ function push(r) {
   series[i].r = filt(i, series[i - 1]);
   if (series.length > MAXKEEP) series.shift();
   total++;
+  recordSample(r);
+  engineStep();                                // event-driven: pick the clip as soon as a reading arrives
 }
 
 function setSource(s) {
   source = s;
   $('dot').classList.toggle('on', !!s);
-  $('connTxt').textContent = s === 'SERIAL' ? 'ARDUINO · 115200' : s === 'SIM' ? 'SIMULATED' : 'NO SIGNAL';
+  $('connTxt').textContent = s === 'SERIAL' ? 'ARDUINO · 115200' : s === 'SIM' ? 'SIMULATED' : s === 'REPLAY' ? 'REPLAY' : 'NO SIGNAL';
   $('src').textContent = 'SOURCE: ' + (s ?? '—');
   $('connect').disabled = s === 'SERIAL';
   $('disconnect').disabled = s !== 'SERIAL';
@@ -315,7 +450,7 @@ $('connect').onclick = async () => {
   try {
     const port = await navigator.serial.requestPort();
     await port.open({ baudRate: 115200 });
-    $('sim').checked = false;
+    $('sim').checked = false; stopReplay(true);
     setSource('SERIAL');
     const dec = new TextDecoderStream();
     const closed = port.readable.pipeTo(dec.writable).catch(() => {});
@@ -350,7 +485,7 @@ $('disconnect').onclick = closeSerial;
 // simulation (only when ticked and no serial connection)
 let simT = 0;
 setInterval(() => {
-  if (!$('sim').checked || serial) return;
+  if (!$('sim').checked || serial || replay.on) return;
   if (source !== 'SIM') setSource('SIM');
   simT += 0.2;
   push(10000 + 2500 * Math.sin(simT * 0.15) + 800 * Math.sin(simT * 0.9) + (Math.random() - 0.5) * 150);
@@ -370,7 +505,7 @@ $('csv').onclick = () => {
 };
 
 $('fon').onclick = () => { $('fon').classList.toggle('on'); $('fon').textContent = 'SMOOTHING: ' + (filterOn() ? 'ON' : 'OFF'); refilter(); };
-['famt', 'fdesp'].forEach((id) => ($(id).oninput = refilter));
+['famt', 'fdesp', 'fwinn', 'fmode'].forEach((id) => { $(id).oninput = refilter; $(id).onchange = refilter; });
 refilter();
 
 // ───── scope ─────
@@ -493,6 +628,13 @@ function draw() {
 }
 requestAnimationFrame(draw);
 
+function engineStep() {
+  const last = series[series.length - 1], fresh = last && performance.now() - last.t < 2500;
+  voiceTick(last, fresh, []);
+  instTick(last, fresh);
+  trackActivity(last); applyLevels();
+}
+
 // numbers (refreshed 10×/s)
 setInterval(() => {
   const rawLast = series[series.length - 1];
@@ -508,9 +650,7 @@ setInterval(() => {
     vis.forEach((p) => { lo = Math.min(lo, p.r); hi = Math.max(hi, p.r); sum += p.r; });
     $('smin').textContent = fmtOhm(lo); $('smax').textContent = fmtOhm(hi); $('smean').textContent = fmtOhm(sum / vis.length);
   } else { $('smin').textContent = $('smax').textContent = $('smean').textContent = '—'; }
-  voiceTick(last, fresh, vis);
-  instTick(last, fresh);
-  trackActivity(last); applyLevels();
+  engineStep();                                // also every 100 ms for pitch glide, loudness and stale-signal fade-out
   const recent = series.filter((p) => p.t >= now - 5000).length;
   $('srate').textContent = recent ? (recent / 5).toFixed(1) + ' Hz' : '—';
   $('scount').textContent = total;
@@ -540,7 +680,7 @@ function zoneEdges(n) {
 function zoneOf(r, E, cur) {
   const n = E.length - 1;
   let z = 0; while (z < n - 1 && r >= E[z + 1]) z++;
-  if (cur >= 0 && cur < n) { const m = (E[cur + 1] - E[cur]) * 0.06; if (r >= E[cur] - m && r < E[cur + 1] + m) z = cur; }
+  if (cur >= 0 && cur < n) { const m = (E[cur + 1] - E[cur]) * ((+$('vhyst').value || 0) / 100); if (r >= E[cur] - m && r < E[cur + 1] + m) z = cur; }
   const w = E[z + 1] - E[z];
   return { z, frac: w > 0 ? Math.min(1, Math.max(0, (r - E[z]) / w)) : 0.5 };
 }
@@ -561,16 +701,151 @@ function applyLevels() {
 }
 let libVersion = 0;                                  // bumped whenever the library changes
 
+// Loudest part of a clip: RMS envelope (40 ms window, 20 ms hop); the region around the peak that stays within 6 dB of it,
+// at least 150 ms long, with both ends snapped to zero crossings so the loop does not click.
+// Pitch (fundamental frequency): YIN on a few frames from the loud part; median of the voiced frames. 0 = no clear pitch.
+function detectF0(mono, sr, a, b) {
+  const W = Math.round(sr * 0.03), minLag = Math.floor(sr / 500), maxLag = Math.ceil(sr / 70);
+  const i0 = Math.max(0, Math.round(a * sr)), i1 = Math.min(mono.length - W - maxLag - 2, Math.round(Math.min(b, a + 0.6) * sr));
+  if (i1 < i0) return 0;
+  const est = [], step = Math.max(1, Math.round((i1 - i0) / 6));
+  for (let s = i0; s <= i1 && est.length < 8; s += step) {
+    const d = new Float32Array(maxLag + 2);
+    for (let tau = 1; tau <= maxLag; tau++) { let sum = 0; for (let j = 0; j < W; j += 2) { const df = mono[s + j] - mono[s + j + tau]; sum += df * df; } d[tau] = sum; }
+    const dn = new Float32Array(maxLag + 2); let run = 0; dn[0] = 1;
+    for (let tau = 1; tau <= maxLag; tau++) { run += d[tau]; dn[tau] = (d[tau] * tau) / (run || 1); }
+    let tau = minLag;
+    while (tau < maxLag) { if (dn[tau] < 0.15) { while (tau + 1 < maxLag && dn[tau + 1] < dn[tau]) tau++; break; } tau++; }
+    if (tau >= maxLag) continue;
+    const x0 = dn[tau - 1], x1 = dn[tau], x2 = dn[tau + 1], den = x0 - 2 * x1 + x2;
+    est.push(sr / (tau + (den ? (0.5 * (x0 - x2)) / den : 0)));
+  }
+  if (!est.length) return 0;
+  est.sort((x, y) => x - y); return est[Math.floor(est.length / 2)];
+}
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function noteOf(f) { if (!(f > 0)) return '—'; const m = Math.round(69 + 12 * Math.log2(f / 440)); return NOTE_NAMES[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1); }
+const pitchKey = (c) => { const i = loudCache.get(c.index); return i && i.f0 > 0 ? i.f0 : Infinity; };         // clips without a clear pitch go last
+
+const loudCache = new Map();
+function loudRegion(buf) {
+  const sr = buf.sampleRate, n = buf.length, mono = new Float32Array(n);
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) { const d = buf.getChannelData(ch); for (let i = 0; i < n; i++) mono[i] += d[i] / buf.numberOfChannels; }
+  const hop = Math.max(1, Math.round(sr * 0.02)), win = hop * 2, env = [];
+  for (let i = 0; i + win <= n; i += hop) { let s = 0; for (let j = i; j < i + win; j++) s += mono[j] * mono[j]; env.push(Math.sqrt(s / win)); }
+  if (!env.length) return { a: 0, b: buf.duration, dur: buf.duration, peak: 0, f0: 0 };
+  let pk = 0; env.forEach((v, i) => { if (v > env[pk]) pk = i; });
+  const thr = env[pk] * 0.5;
+  let a = pk, b = pk;
+  while (a > 0 && env[a - 1] >= thr) a--;
+  while (b < env.length - 1 && env[b + 1] >= thr) b++;
+  let t0 = (a * hop) / sr, t1 = ((b + 2) * hop) / sr;
+  const minS = Math.min(0.15, buf.duration);
+  if (t1 - t0 < minS) { const mid = (t0 + t1) / 2; t0 = mid - minS / 2; t1 = mid + minS / 2; }
+  t0 = Math.max(0, t0); t1 = Math.min(buf.duration, Math.max(t1, t0 + minS));
+  const snap = (t) => {                              // nearest zero crossing within 10 ms
+    const c = Math.round(t * sr), r = Math.round(sr * 0.01); let best = Math.min(n - 1, Math.max(1, c));
+    for (let d = 0; d <= r; d++) for (const k of [c - d, c + d]) if (k > 0 && k < n && mono[k - 1] <= 0 && mono[k] > 0) return k / sr;
+    return best / sr;
+  };
+  let sa = snap(t0), sb = snap(t1);
+  if (sb - sa < 0.05) { sa = t0; sb = t1; }
+  return { a: sa, b: sb, dur: buf.duration, peak: env[pk], f0: detectF0(mono, sr, sa, sb) };
+}
+async function loudInfo(c) {                         // for any clip (decodes on demand)
+  if (loudCache.has(c.index)) return loudCache.get(c.index);
+  const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, 44100);
+  const info = loudRegion(await ac.decodeAudioData(await c.blob.arrayBuffer()));
+  loudCache.set(c.index, info); return info;
+}
+
+// ───── folders ─────
+// A folder is just a name stored on each clip (clips without one are in "default"). Empty folders are remembered in localStorage.
+const FOLDER_KEY = 'mushpit.folders';
+const clipFolder = (c) => c.folder || 'default';
+const libTarget = () => { const v = $('libfolder') && $('libfolder').value; return !v || v === '*' ? 'default' : v; };
+let folderMem = [];                                   // fallback when localStorage is blocked (kept until the page closes)
+function savedFolders() { try { return JSON.parse(localStorage.getItem(FOLDER_KEY) || '[]'); } catch { return folderMem; } }
+function rememberFolders(arr) { folderMem = [...new Set(arr)]; try { localStorage.setItem(FOLDER_KEY, JSON.stringify(folderMem)); } catch {} }
+async function rebuildFolders() {
+  const names = [...new Set(['default', ...savedFolders(), ...(await allClips()).map(clipFolder)])];
+  const fill = (id, withAll, key) => {
+    const sel = $(id), want = sel.value || (() => { try { return localStorage.getItem(key); } catch { return null; } })();
+    sel.textContent = '';
+    if (withAll) { const o = document.createElement('option'); o.value = '*'; o.textContent = 'ALL FOLDERS'; sel.append(o); }
+    names.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n; sel.append(o); });
+    sel.value = names.includes(want) || (withAll && want === '*') ? want : (withAll ? '*' : 'default');
+  };
+  const beforeV = $('vfolder').value;
+  fill('vfolder', true, 'mushpit.vfolder'); fill('libfolder', true, 'mushpit.libfolder'); fill('chfolder', false, 'mushpit.chfolder');
+  if ($('vfolder').value !== beforeV) libVersion++;                  // the wavelength folder changed: re-pick its clips
+  return names;
+}
+const keep = (key, v) => { try { localStorage.setItem(key, v); } catch {} };
+$('vfolder').onchange = () => { keep('mushpit.vfolder', $('vfolder').value); libVersion++; };
+$('libfolder').onchange = () => { keep('mushpit.libfolder', $('libfolder').value); refreshLibrary(); };
+$('chfolder').onchange = () => keep('mushpit.chfolder', $('chfolder').value);
+async function createFolder(raw) {
+  const name = (raw || '').trim().slice(0, 40);
+  if (!name || name === '*') return null;
+  rememberFolders([...savedFolders(), name]); await rebuildFolders(); return name;
+}
+$('newfbtn').onclick = async () => {
+  const n = await createFolder($('newfolder').value); if (!n) return;
+  $('newfolder').value = ''; $('libfolder').value = n; keep('mushpit.libfolder', n); refreshLibrary();
+};
+$('chnewbtn').onclick = async () => {
+  const n = await createFolder($('chnewf').value); if (!n) return;
+  $('chnewf').value = ''; $('chfolder').value = n; keep('mushpit.chfolder', n);
+};
+async function putClip(c) { if (db) await req(tx('readwrite').put(c)); libVersion++; }
+$('delfbtn').onclick = async () => {
+  const cur = $('libfolder').value;
+  if (cur === '*' || cur === 'default') { $('upmsg').className = 'msg err'; $('upmsg').textContent = 'Pick a folder (not "default" / "all") to delete.'; return; }
+  const inside = (await allClips()).filter((c) => clipFolder(c) === cur);
+  if (inside.length && !confirm('Delete folder "' + cur + '"? Its ' + inside.length + ' clips move to "default".')) return;
+  for (const c of inside) { c.folder = 'default'; await putClip(c); }
+  rememberFolders(savedFolders().filter((n) => n !== cur));
+  for (const id of ['vfolder', 'libfolder', 'chfolder']) if ($(id).value === cur) $(id).value = id === 'chfolder' ? 'default' : '*';
+  await rebuildFolders(); refreshLibrary();
+};
+$('renfbtn').onclick = async () => {
+  const cur = $('libfolder').value, to = ($('newfolder').value || '').trim().slice(0, 40);
+  if (cur === '*' || cur === 'default' || !to) { $('upmsg').className = 'msg err'; $('upmsg').textContent = 'Pick a folder (not "default" / "all") and type its new name in the box first.'; return; }
+  for (const c of (await allClips()).filter((c) => clipFolder(c) === cur)) { c.folder = to; await putClip(c); }
+  rememberFolders([...savedFolders().filter((n) => n !== cur), to]);
+  const wasV = $('vfolder').value === cur; await rebuildFolders();
+  $('libfolder').value = to; keep('mushpit.libfolder', to); if (wasV) { $('vfolder').value = to; keep('mushpit.vfolder', to); }
+  $('newfolder').value = ''; libVersion++; refreshLibrary();
+};
+
+// the order the zones, the waveform bands and the library table use
+async function orderedClips(folder) {
+  let list = await allClips();
+  if (folder && folder !== '*') list = list.filter((c) => clipFolder(c) === folder);
+  await Promise.all(list.map((c) => loudInfo(c).catch(() => null)));
+  if ($('vorder').value !== 'pitch') return list;
+  return list.slice().sort((a, b) => pitchKey(a) - pitchKey(b) || a.index - b.index);
+}
+function setVOrder(v) {
+  $('vorder').value = v; $('vorder2').value = v;
+  try { localStorage.setItem('mushpit.vorder', v); } catch {}
+  libVersion++; refreshLibrary();
+}
+$('vorder').onchange = () => setVOrder($('vorder').value);
+$('vorder2').onchange = () => setVOrder($('vorder2').value);
+try { const v = localStorage.getItem('mushpit.vorder'); if (v) { $('vorder').value = v; $('vorder2').value = v; } } catch {}
+
 async function syncClips() {
   voice.libVer = libVersion;
-  try { voice.clips = await allClips(); } catch (e) { $('vmsg').textContent = 'Library read failed: ' + e.message; return; }
+  try { voice.clips = await orderedClips($('vfolder').value); } catch (e) { $('vmsg').textContent = 'Library read failed: ' + e.message; return; }
   voice.cur = -1;                                     // zones moved: re-pick the clip on the next tick
-  $('vlib').textContent = voice.clips.length + (voice.clips.length === 1 ? ' clip' : ' clips');
+  $('vlib').textContent = voice.clips.length + (voice.clips.length === 1 ? ' clip' : ' clips') + ' · ' + ($('vfolder').value === '*' ? 'all folders' : $('vfolder').value);
   if (!voice.ctx) return;
   for (const c of voice.clips) {
     if (voice.bufs.has(c.index)) continue;
     voice.bufs.set(c.index, null);                    // mark as decoding
-    try { voice.bufs.set(c.index, await voice.ctx.decodeAudioData(await c.blob.arrayBuffer())); }
+    try { const buf = await voice.ctx.decodeAudioData(await c.blob.arrayBuffer()); loudCache.set(c.index, loudRegion(buf)); voice.bufs.set(c.index, buf); }
     catch (e) { voice.bufs.delete(c.index); $('vmsg').textContent = 'Could not decode ' + c.name + ': ' + e.message; }
   }
 }
@@ -589,7 +864,12 @@ function startClip(i) {
   const t = voice.ctx.currentTime, src = voice.ctx.createBufferSource(), g = voice.ctx.createGain();
   src.buffer = buf; src.loop = true;
   g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + FADE);
-  src.connect(g).connect(voice.master); src.start();
+  src.connect(g).connect(voice.master);
+  const li = loudCache.get(c.index);
+  if ($('vloud').checked && li) {                    // start at the loudest part instead of the beginning
+    src.loopStart = li.a; src.loopEnd = $('vloudmode').value === 'tail' ? li.dur : li.b;
+    src.start(0, li.a);
+  } else src.start();
   stopPlay(voice.play, FADE);
   voice.play = { src, gain: g, i };
   return true;
@@ -598,24 +878,33 @@ function startClip(i) {
 function voiceTick(last, fresh, vis) {
   if (voice.libVer !== libVersion) syncClips();
   const n = voice.clips.length;
-  zones.n = n; zones.names = voice.clips.map((c) => c.name);
+  zones.n = n; zones.names = voice.clips.map((c) => { const i = loudCache.get(c.index); return c.name + (i && i.f0 > 0 ? ' · ' + noteOf(i.f0) : ''); });
 
   // zone range: AUTO = min/max of the last 10 minutes; otherwise the numbers typed in LOW / HIGH
   let lo, hi;
   if ($('vauto').checked) {
-    const since = performance.now() - +$('vwin').value * 1000, rs = [];
-    for (let i = series.length - 1; i >= 0 && series[i].t >= since; i--) rs.push(series[i].r);
-    rs.sort((a, b) => a - b);
-    zones.sorted = rs;
-    const cut = Math.floor(rs.length * (+$('vtrim').value / 100));      // drop spikes at both ends
-    lo = rs.length ? rs[cut] : Infinity; hi = rs.length ? rs[rs.length - 1 - cut] : -Infinity;
-    if (!isFinite(lo) || hi - lo < 1) { lo = (last ? last.r : 0) - 0.5; hi = lo + 1; }
+    const every = +$('vrefresh').value * 1000, nowT = performance.now(), c = zones.cache;
+    if (c && every > 0 && nowT - c.t < every) { lo = c.lo; hi = c.hi; zones.sorted = c.sorted; }   // scale frozen until the next re-scale
+    else {
+      const since = nowT - +$('vwin').value * 1000, rs = [];
+      for (let i = series.length - 1; i >= 0 && series[i].t >= since; i--) rs.push(series[i].r);
+      rs.sort((a, b) => a - b);
+      zones.sorted = rs;
+      const cut = Math.floor(rs.length * (+$('vtrim').value / 100));      // drop spikes at both ends
+      lo = rs.length ? rs[cut] : Infinity; hi = rs.length ? rs[rs.length - 1 - cut] : -Infinity;
+      if (!isFinite(lo) || hi - lo < 1) { lo = (last ? last.r : 0) - 0.5; hi = lo + 1; }
+      zones.cache = rs.length >= 10 ? { lo, hi, sorted: rs, t: nowT } : null;       // do not freeze a scale built from almost no data
+    }
+    $('vnext').textContent = every > 0 && zones.cache ? 'next re-scale in ' + Math.max(0, Math.ceil((every - (nowT - zones.cache.t)) / 1000)) + ' s' : '';
     // show the live range in the boxes so you can start adjusting from it
     for (const [id, v] of [['vlo', Math.floor(lo)], ['vhi', Math.ceil(hi)]]) if (document.activeElement !== $(id)) $(id).value = v;
-  } else { zones.sorted = []; lo = +$('vlo').value; hi = +$('vhi').value; if (!(hi > lo)) hi = lo + 1; }
+  } else { zones.sorted = []; zones.cache = null; $('vnext').textContent = ''; lo = +$('vlo').value; hi = +$('vhi').value; if (!(hi > lo)) hi = lo + 1; }
   zones.lo = lo; zones.hi = hi;
   zones.mode = $('vspace').value === 'pct' && $('vauto').checked ? 'pct' : 'lin';
-  $('vpos').textContent = last ? Math.round(((last.r - lo) / (hi - lo)) * 100) + '%' : '—';   // 0% = bottom, 100% = top; <0 / >100 = outside
+  const mapped = last ? ((last.r - lo) / (hi - lo)) * 100 : null;
+  $('pmap').textContent = last ? Math.round(mapped) + '%' : '—';
+  $('pbar').style.width = last ? Math.min(100, Math.max(0, mapped)) + '%' : '0';
+  $('vpos').textContent = last ? Math.round(mapped) + '%' : '—';   // 0% = bottom, 100% = top; <0 / >100 = outside
 
   if (!voice.on) { $('vclip').textContent = $('vzone').textContent = '—'; return; }
   if (!n) { $('vstat').textContent = 'ON · LIBRARY EMPTY'; $('vclip').textContent = $('vzone').textContent = '—'; return; }
@@ -625,16 +914,18 @@ function voiceTick(last, fresh, vis) {
     $('vstat').textContent = 'ON · WAITING FOR SIGNAL'; $('vclip').textContent = $('vzone').textContent = '—'; return;
   }
 
-  const zz = zoneOf(last.r, zoneEdges(n), voice.cur), z = zz.z;
-  if (z !== voice.cur || !voice.play) { if (startClip(z)) voice.cur = z; }
+  const zz = zoneOf(last.r, zoneEdges(n), voice.cur), z = zz.z, nowT = performance.now();
+  const due = voice.cur < 0 || !voice.play || nowT - (voice.lastSwitch || 0) >= (+$('vdwell').value || 0);   // debounce: minimum time on a clip
+  if ((z !== voice.cur || !voice.play) && due) { if (startClip(z)) { voice.cur = z; voice.lastSwitch = nowT; } }
   zones.cur = voice.cur;
   if (voice.play && voice.cur >= 0) {                  // pitch glides with the position inside the zone, so it moves between zone changes
-    const frac = zz.frac;
+    const frac = z === voice.cur ? zz.frac : (z > voice.cur ? 1 : 0);
     voice.play.src.playbackRate.setTargetAtTime(Math.pow(2, ((frac - 0.5) * 2 * (+$('vbend').value || 0)) / 12), voice.ctx.currentTime, 0.1);
   }
   $('vstat').textContent = 'ON · PLAYING';
   $('vclip').textContent = voice.cur >= 0 ? voice.clips[voice.cur].name : '—';
   $('vzone').textContent = voice.cur >= 0 ? (voice.cur + 1) + ' / ' + n : '—';
+  $('pzone').textContent = $('vzone').textContent;
 }
 
 $('voice').onclick = async () => {
@@ -652,7 +943,10 @@ $('voice').onclick = async () => {
     stopPlay(voice.play, 0.1); voice.play = null; voice.cur = -1; zones.cur = -1;
   }
 };
+['vloud', 'vloudmode'].forEach((id) => $(id).addEventListener('change', () => { voice.cur = -1; }));   // re-trigger the current clip with the new setting
 $('vol').oninput = () => { if (voice.master) voice.master.gain.value = +$('vol').value; };
+// any change to the auto-scale settings re-scales immediately
+['vwin', 'vtrim', 'vspace', 'vrefresh', 'vauto'].forEach((id) => $(id).addEventListener('change', () => { zones.cache = null; }));
 // typing in LOW / HIGH switches to manual scale
 ['vlo', 'vhi'].forEach((id) => ($(id).oninput = () => { $('vauto').checked = false; }));
 
@@ -687,9 +981,9 @@ let db = null;
 
 function openDB() {
   return new Promise((res, rej) => {
-    const rq = indexedDB.open(DB, 2);
+    const rq = indexedDB.open(DB, 3);
     rq.onupgradeneeded = () => {
-      for (const st of [STORE, 'inst']) if (!rq.result.objectStoreNames.contains(st)) rq.result.createObjectStore(st, { keyPath: 'id', autoIncrement: true });
+      for (const st of [STORE, 'inst', 'sessions']) if (!rq.result.objectStoreNames.contains(st)) rq.result.createObjectStore(st, { keyPath: 'id', autoIncrement: true });
     };
     rq.onsuccess = () => res(rq.result);
     rq.onerror = () => rej(rq.error);
@@ -708,9 +1002,9 @@ async function nextIndex() {
   return Math.max(n, ...clips.map((c) => c.index), 0) + 1;   // never reuses a number
 }
 
-async function saveClip(blob, ms, source) {
+async function saveClip(blob, ms, source, folder) {
   const index = await nextIndex();
-  const clip = { index, name: 'vowel_' + index, blob, type: blob.type, ms, created: Date.now(), source };
+  const clip = { index, name: 'vowel_' + index, blob, type: blob.type, ms, created: Date.now(), source, folder: folder || libTarget() };
   if (db) await req(tx('readwrite').add(clip)); else memClips.push(clip);
   try { localStorage.setItem('mushpit.vowelCounter', String(index)); } catch {}
   libVersion++;
@@ -722,7 +1016,7 @@ const ext = (type) => /ogg/.test(type) ? 'ogg' : /mp4|m4a|aac/.test(type) ? 'm4a
 
 // ───── upload ─────
 const MAX_UP = 25 * 1024 * 1024;
-async function importFiles(files) {
+async function importFiles(files, folder) {
   const msg = $('upmsg'); msg.className = 'msg'; msg.textContent = '';
   const ok = [], bad = [];
   for (const f of [...files]) {
@@ -731,7 +1025,7 @@ async function importFiles(files) {
       const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, 44100);
       const dec = await ac.decodeAudioData(await f.arrayBuffer());          // also validates the file
       const blob = f.type ? f : new Blob([f], { type: 'audio/' + (f.name.split('.').pop() || 'wav') });
-      const clip = await saveClip(blob, Math.round(dec.duration * 1000), f.name);
+      const clip = await saveClip(blob, Math.round(dec.duration * 1000), f.name, folder);
       ok.push(clip.name + ' ← ' + f.name);
     } catch { bad.push(f.name + ' (not a readable audio file)'); }
   }
@@ -749,7 +1043,8 @@ const kb = (n) => (n / 1024).toFixed(1) + ' kB';
 let playing = null;
 
 async function refreshLibrary() {
-  const clips = await allClips();
+  await rebuildFolders();
+  const clips = await orderedClips($('libfolder').value);
   $('libcount').textContent = clips.length + (clips.length === 1 ? ' FILE' : ' FILES');
   $('libempty').hidden = clips.length > 0;
   $('nextname').textContent = 'NEXT: vowel_' + (await nextIndex());
@@ -758,8 +1053,11 @@ async function refreshLibrary() {
     const tr = document.createElement('tr');
     const cell = (txt, cls) => { const td = document.createElement('td'); td.textContent = txt; if (cls) td.className = cls; tr.append(td); return td; };
     cell(c.name + '.' + ext(c.type));
+    cell(clipFolder(c));
     cell(c.source || 'mic');
     cell((c.ms / 1000).toFixed(1) + ' s', 'n');
+    const lc = cell('…', 'n'), pc = cell('…', 'n');
+    loudInfo(c).then((li) => { lc.textContent = li.a.toFixed(2) + ' – ' + li.b.toFixed(2) + ' s'; pc.textContent = li.f0 > 0 ? noteOf(li.f0) + ' · ' + Math.round(li.f0) + ' Hz' : 'no clear pitch'; }).catch(() => { lc.textContent = pc.textContent = '—'; });
     cell(kb(c.blob.size), 'n');
     cell(new Date(c.created).toLocaleString(), 'n');
     const act = cell('', 'act');
@@ -777,9 +1075,13 @@ async function refreshLibrary() {
       const a = document.createElement('a'); a.href = URL.createObjectURL(c.blob);
       a.download = c.name + '.' + ext(c.type); a.click(); URL.revokeObjectURL(a.href);
     });
+    const mv = document.createElement('select'); mv.title = 'move to folder';
+    [['', 'MOVE TO…'], ...[...$('chfolder').options].map((o) => [o.value, o.textContent])].forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; mv.append(o); });
+    mv.onchange = async () => { if (!mv.value) return; c.folder = mv.value; await putClip(c); refreshLibrary(); };
+    act.append(mv);
     btn('DELETE', async () => {
       if (db) await req(tx('readwrite').delete(c.id)); else memClips.splice(memClips.indexOf(c), 1);
-      libVersion++; voice.bufs.delete(c.index);
+      libVersion++; voice.bufs.delete(c.index); loudCache.delete(c.index);
       refreshLibrary();
     });
     body.append(tr);
@@ -903,11 +1205,13 @@ function instTick(last, fresh) {
     if (inst.play) { stopInst(inst.play, FADE); inst.play = null; inst.cur = -1; izones.cur = -1; }
     $('istat').textContent = 'ON · WAITING FOR SIGNAL'; $('iclip').textContent = $('izone').textContent = $('ipitch').textContent = '—'; return;
   }
-  const zz = zoneOf(last.r, EI, inst.cur), z = zz.z;
-  const frac = zz.frac, loop = $('imode').value === 'loop', now = performance.now();
+  const zz = zoneOf(last.r, EI, inst.cur), now = performance.now();
+  const dueI = inst.cur < 0 || !inst.play || now - (inst.lastSwitch || 0) >= (+$('vdwell').value || 0);   // same debounce as the voices
+  const z = zz.z !== inst.cur && !dueI ? inst.cur : zz.z;
+  const frac = z === zz.z ? zz.frac : (zz.z > z ? 1 : 0), loop = $('imode').value === 'loop';
   const changed = z !== inst.cur || !inst.play;
   const repeat = !loop && now - inst.lastShot > Math.max(0.2, +$('irep').value || 2) * 1000;
-  if (changed || repeat) { if (startInst(L[z], frac, loop)) { inst.cur = z; inst.lastShot = now; } }
+  if (changed || repeat) { if (startInst(L[z], frac, loop)) { if (z !== inst.cur) inst.lastSwitch = now; inst.cur = z; inst.lastShot = now; } }
   else if (loop && inst.play) inst.play.src.playbackRate.setTargetAtTime(bendRate(frac), inst.ctx.currentTime, 0.1);
   izones.cur = inst.cur;
   const st = 12 * Math.log2(bendRate(frac));
@@ -1008,6 +1312,446 @@ async function refreshInst() {
   });
 }
 
+// ═════════════════════════════ DATA: RECORD · REPLAY · ANALYSE · AUTO-TUNE ═════════════════════════════
+// Records the RAW readings (before smoothing). Sessions live in IndexedDB. ANALYSE measures the noise, the spikes and how
+// fast the reading really moves, then works out smoothing / spike removal / edge buffer so the voices follow real
+// movement and ignore jitter.
+const rec = { on: false, t0: 0, t: [], r: [], session: null, lastSave: 0 };
+const sessMem = [];
+const replay = { on: false, s: null, i: 0, timer: 0 };
+
+function recordSample(raw) {
+  if (!rec.on || replay.on) return;
+  rec.t.push(+((performance.now() - rec.t0) / 1000).toFixed(3)); rec.r.push(raw);
+}
+async function allSessions() { return (db ? await req(tx('readonly', 'sessions').getAll()) : sessMem).slice().sort((a, b) => a.index - b.index); }
+async function saveSession(s) {
+  if (db) { if (s.id == null) s.id = await req(tx('readwrite', 'sessions').add(s)); else await req(tx('readwrite', 'sessions').put(s)); }
+  else { if (s.id == null) s.id = Date.now() + Math.random(); if (!sessMem.includes(s)) sessMem.push(s); }
+}
+async function flushRec() {                       // write the current recording (also used for autosave)
+  const s = rec.session; if (!s || !rec.r.length) return;
+  s.t = Float64Array.from(rec.t); s.r = Float32Array.from(rec.r); s.n = rec.r.length; s.durMs = Math.round(rec.t[rec.t.length - 1] * 1000);
+  s.min = Math.min(...rec.r); s.max = Math.max(...rec.r);
+  await saveSession(s); rec.lastSave = performance.now();
+}
+const fmtDur = (ms) => (ms >= 60000 ? Math.floor(ms / 60000) + ' min ' + Math.round((ms % 60000) / 1000) + ' s' : (ms / 1000).toFixed(1) + ' s');
+
+$('rtoggle').onclick = async () => {
+  if (!rec.on) {
+    const list = await allSessions(), index = Math.max(0, ...list.map((s) => s.index)) + 1;
+    Object.assign(rec, { on: true, t0: performance.now(), t: [], r: [], lastSave: performance.now(), session: { index, name: 'session_' + index, created: Date.now(), n: 0, durMs: 0 } });
+    $('rtoggle').textContent = '■ STOP RECORDING'; $('rtoggle').classList.add('on');
+    $('rmsg').className = 'msg'; $('rmsg').textContent = source ? 'Recording ' + rec.session.name + '…' : 'Recording ' + rec.session.name + ' — no signal yet, readings are stored as they arrive.';
+  } else {
+    rec.on = false; $('rtoggle').textContent = '● RECORD DATA'; $('rtoggle').classList.remove('on');
+    if (rec.r.length) { await flushRec(); $('rmsg').textContent = 'Saved ' + rec.session.name + ' (' + rec.r.length + ' readings).'; }
+    else $('rmsg').textContent = 'Nothing recorded (no readings arrived).';
+    rec.session = null; refreshSessions();
+  }
+};
+setInterval(() => {
+  $('rn').textContent = rec.on ? rec.r.length : '—';
+  $('rdur').textContent = rec.on ? fmtDur(performance.now() - rec.t0) : '—';
+  $('rstat').textContent = rec.on ? 'RECORDING' : 'IDLE';
+  if (rec.on && performance.now() - rec.lastSave > 30000) flushRec();      // autosave
+}, 500);
+
+// ───── replay a session through the live pipeline ─────
+function stopReplay(silent) {
+  clearTimeout(replay.timer); replay.on = false; replay.s = null;
+  if (!silent) setSource(serial ? 'SERIAL' : $('sim').checked ? 'SIM' : null);
+  if ($('sessbody')) refreshSessions();
+}
+function startReplay(s) {
+  if (serial) { $('rmsg').className = 'msg err'; $('rmsg').textContent = 'Disconnect the Arduino before replaying.'; return; }
+  stopReplay(true); $('sim').checked = false;
+  Object.assign(replay, { on: true, s, i: 0 });
+  setSource('REPLAY'); refreshSessions();
+  const step = () => {
+    if (!replay.on) return;
+    const i = replay.i; push(s.r[i]);
+    replay.i = (i + 1) % s.n;                                                 // loops
+    const dt = replay.i > 0 ? (s.t[replay.i] - s.t[i]) * 1000 : 1000;
+    replay.timer = setTimeout(step, Math.min(5000, Math.max(20, dt)));
+  };
+  step();
+}
+
+// ───── analysis ─────
+function quant(sortedArr, q) { return sortedArr[Math.min(sortedArr.length - 1, Math.max(0, Math.round(q * (sortedArr.length - 1))))]; }
+function analyse(ts, rs) {
+  const n = rs.length; if (n < 30) return null;
+  const dts = [], diffs = [];
+  for (let i = 1; i < n; i++) { dts.push(ts[i] - ts[i - 1]); diffs.push(rs[i] - rs[i - 1]); }
+  const dt = Math.max(0.02, median(dts.filter((d) => d > 0)) || 0.2);
+  const sigmaD = median(diffs.map(Math.abs)) / 0.6745;                          // robust: ignores spikes
+  const sigma = Math.max(1e-9, sigmaD / Math.SQRT2);                            // per-reading jitter
+  let big = 0; diffs.forEach((d) => { if (Math.abs(d) > 6 * sigmaD) big++; });
+  const spikePct = (big / 2 / n) * 100;                                         // a spike makes two big steps
+  const clean = rs.map((_, i) => median(rs.slice(Math.max(0, i - 2), i + 3)));  // centred median of 5
+  const sorted = clean.slice().sort((a, b) => a - b);
+  const p5 = quant(sorted, 0.05), p95 = quant(sorted, 0.95);
+  const k = Math.max(1, Math.round(1 / dt)), speeds = [];                        // change over ~1 s
+  for (let i = k; i < n; i++) speeds.push(Math.abs(clean[i] - clean[i - k]) / (ts[i] - ts[i - k] || 1));
+  speeds.sort((a, b) => a - b);
+  return { n, durS: ts[n - 1] - ts[0], dt, sigma, spikePct, p5, p95, range: Math.max(1e-6, p95 - p5), vel90: quant(speeds, 0.9), sorted };
+}
+function tune(rep, zonesN) {
+  const nz = Math.max(2, zonesN);
+  const E = []; for (let k = 0; k <= nz; k++) E.push(quant(rep.sorted, k / nz));  // equal-time zone edges
+  const widths = []; for (let k = 0; k < nz; k++) widths.push(E[k + 1] - E[k]);
+  widths.sort((a, b) => a - b);
+  const w = Math.max(1e-6, quant(widths, 0.25));                                  // the narrower zones are the ones that flicker
+  const despike = rep.spikePct > 0.5;
+  const sig = rep.sigma * (despike ? 0.6 : 1);                                    // the median stage already removes part of the jitter
+  const f = Math.min(1, (0.25 * w) / sig);                                        // wanted: jitter <= 1/4 of a zone
+  const alphaNeed = f < 1 ? (2 * f * f) / (1 + f * f) : 1;
+  const tauNeed = alphaNeed >= 1 ? 0.1 : -rep.dt / Math.log(1 - alphaNeed);
+  const T = w / Math.max(rep.vel90, 1e-9), tauMax = Math.max(0.3, T / 2);        // do not lag more than half a zone crossing
+  const tau = Math.min(10, Math.max(0.1, Math.min(tauNeed, tauMax)));
+  const alpha = 1 - Math.exp(-rep.dt / tau), sigF = sig * Math.sqrt(alpha / (2 - alpha));
+  const buffer = Math.round(Math.min(0.4, Math.max(0.04, (2.5 * sigF) / w)) * 100);
+  const notes = [];
+  if (tauNeed > tauMax * 1.05) notes.push('The jitter is large compared to the zones: smoothing is capped so the voices still react. Fewer clips (wider zones) will be calmer.');
+  if (rep.vel90 < w / 30) notes.push('The reading barely moves compared to the zone size: expect long stretches on one clip.');
+  const win = Math.min(60, Math.max(1, Math.round((2 * tau) / rep.dt)));          // moving-average length with the same noise reduction
+  const dwell = Math.round(Math.min(1500, Math.max(150, 0.35 * T * 1000)));          // shorter than a real zone crossing
+  return { tau, buffer, despike, sigF, w, T, nz, notes, win, dwell };
+}
+function reportText(rep, t) {
+  const f = (v) => (v >= 100 ? v.toFixed(0) : v.toFixed(1));
+  return [
+    'READINGS     ' + rep.n + ' over ' + fmtDur(rep.durS * 1000) + ' (one every ' + rep.dt.toFixed(2) + ' s)',
+    'JITTER       ' + f(rep.sigma) + ' Ω between readings',
+    'SPIKES       ' + rep.spikePct.toFixed(1) + '% of readings',
+    'SPREAD       ' + f(rep.p5) + ' – ' + f(rep.p95) + ' Ω (5–95%)',
+    'FAST MOVES   ' + f(rep.vel90) + ' Ω/s (90th percentile, over 1 s)',
+    'ZONES        ' + t.nz + ' · narrowest quarter ≈ ' + f(t.w) + ' Ω wide · crossed in ≈ ' + t.T.toFixed(1) + ' s at fast moves',
+    '',
+    '→ SMOOTHING   moving average of ' + t.win + ' readings (or ' + t.tau.toFixed(1) + ' s exponential)',
+    '→ SPIKES      removal ' + (t.despike ? 'ON' : 'off'),
+    '→ EDGE BUFFER ' + t.buffer + '%',
+    '→ MIN DWELL   ' + t.dwell + ' ms',
+    '→ EXPECTED    jitter after filter ≈ ' + f(t.sigF) + ' Ω (' + Math.round((t.sigF / t.w) * 100) + '% of a zone)',
+    ...t.notes.map((n) => 'NOTE: ' + n),
+  ].join('\n');
+}
+let lastTune = null;
+function zoneCountNow() { return Math.max(voice.clips.length, izones.n, 2); }
+function applyTune(t) {
+  $('fon').classList.add('on'); $('fon').textContent = 'SMOOTHING: ON';
+  $('famt').value = Math.round((100 * Math.log(t.tau / 0.1)) / Math.log(100));
+  $('fwinn').value = t.win; $('vdwell').value = t.dwell;
+  $('fdesp').checked = t.despike; $('vhyst').value = t.buffer; $('vspace').value = 'pct';
+  zones.cache = null; refilter();
+}
+function tuneSeries(rs, ts, apply, label) {
+  const rep = analyse(ts, rs);
+  if (!rep) { $('astat').textContent = 'NOT ENOUGH DATA'; $('areport').textContent = 'Need at least 30 readings.'; return null; }
+  const t = tune(rep, zoneCountNow());
+  lastTune = t;
+  $('astat').textContent = label; $('areport').textContent = reportText(rep, t); $('aapply').disabled = false;
+  if (apply) applyTune(t);
+  return t;
+}
+$('aapply').onclick = () => { if (lastTune) { applyTune(lastTune); $('astat').textContent += ' · APPLIED'; } };
+function tuneLive(apply) {
+  const since = performance.now() - 600000, pts = series.filter((p) => p.t >= since);
+  const t = tuneSeries(pts.map((p) => p.raw), pts.map((p) => p.t / 1000), apply, 'LIVE · LAST ' + Math.round(Math.min(10, (performance.now() - (pts[0] ? pts[0].t : performance.now())) / 60000)) + ' MIN');
+  $('ftunemsg').textContent = t ? 'Tuned: ' + t.win + '-reading average · edge buffer ' + t.buffer + '% · dwell ' + t.dwell + ' ms · spikes ' + (t.despike ? 'removed' : 'left') : 'Not enough data yet (need 30 readings).';
+}
+$('ftune').onclick = () => tuneLive(true);
+setInterval(() => { if ($('fkeep').checked && series.length >= 50) tuneLive(true); }, 30000);
+
+// ───── sessions table ─────
+async function refreshSessions() {
+  const list = await allSessions();
+  $('scount2').textContent = list.length + (list.length === 1 ? ' SESSION' : ' SESSIONS');
+  $('sempty').hidden = list.length > 0;
+  const body = $('sessbody'); body.textContent = '';
+  list.forEach((s) => {
+    const tr = document.createElement('tr');
+    const cell = (txt, cls) => { const td = document.createElement('td'); td.textContent = txt; if (cls) td.className = cls; tr.append(td); return td; };
+    cell(s.name); cell(fmtDur(s.durMs), 'n'); cell(s.n, 'n');
+    cell(s.n ? Math.round(s.min) + ' – ' + Math.round(s.max) + ' Ω' : '—', 'n'); cell(new Date(s.created).toLocaleString(), 'n');
+    const act = cell('', 'act');
+    const btn = (label, fn) => { const b = document.createElement('button'); b.className = 'b'; b.textContent = label; b.onclick = fn; act.append(b); return b; };
+    const mine = replay.on && replay.s && replay.s.id === s.id;
+    btn(mine ? 'STOP REPLAY' : 'REPLAY', () => (mine ? stopReplay() : startReplay(s)));
+    btn('ANALYSE', () => tuneSeries(Array.from(s.r), Array.from(s.t), false, s.name.toUpperCase()));
+    btn('CSV', () => {
+      const rows = ['seconds,ohms', ...Array.from(s.r, (v, i) => s.t[i].toFixed(3) + ',' + v)];
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/csv' }));
+      a.download = s.name + '.csv'; a.click(); URL.revokeObjectURL(a.href);
+    });
+    btn('DELETE', async () => {
+      if (replay.on && replay.s && replay.s.id === s.id) stopReplay();
+      if (db) await req(tx('readwrite', 'sessions').delete(s.id)); else sessMem.splice(sessMem.indexOf(s), 1);
+      refreshSessions();
+    });
+    body.append(tr);
+  });
+}
+
+// ═════════════════════════════ CHOP: talk recording → 1–2 s samples → library ═════════════════════════════
+// Record yourself talking (or upload a file). The recording is cut into human-sound samples of 1–2 s:
+// speech is found from the energy envelope, short bits are merged, long bits are cut at their quietest points,
+// and every cut is snapped to a zero crossing. Pick the ones you like and add them to the voice library in one go.
+const chop = { buf: null, mono: null, name: '', segs: [], ctx: null, play: null, peaks: null, peaksW: 0, rec: null };
+const getChopCtx = () => (chop.ctx ||= new AudioContext());
+const CHOP_SR = 44100;
+
+function monoOf(buf) {
+  const n = buf.length, m = new Float32Array(n), C = buf.numberOfChannels;
+  for (let c = 0; c < C; c++) { const d = buf.getChannelData(c); for (let i = 0; i < n; i++) m[i] += d[i] / C; }
+  return m;
+}
+function snapZC(mono, sr, t) {                         // nearest upward zero crossing within 10 ms
+  const c = Math.round(t * sr), r = Math.round(sr * 0.01), n = mono.length;
+  for (let d = 0; d <= r; d++) for (const k of [c - d, c + d]) if (k > 0 && k < n && mono[k - 1] <= 0 && mono[k] > 0) return k / sr;
+  return Math.min(n - 1, Math.max(0, c)) / sr;
+}
+function fftMag(frame) {                               // radix-2 FFT magnitude of a Float32Array (length = power of 2)
+  const n = frame.length, re = Float64Array.from(frame), im = new Float64Array(n);
+  for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; } }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (-2 * Math.PI) / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const a = i + k, b = a + len / 2, tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+        re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        const ncr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = ncr;
+      }
+    }
+  }
+  return Float64Array.from({ length: n / 2 }, (_, i) => Math.hypot(re[i], im[i]));
+}
+
+function chopBuffer(mono, sr, o) {
+  const n = mono.length, dur = n / sr, hop = Math.round(sr * 0.02), win = hop * 2, H = hop / sr, envDb = [];
+  for (let i = 0; i + win <= n; i += hop) { let s = 0; for (let j = i; j < i + win; j++) s += mono[j] * mono[j]; envDb.push(20 * Math.log10(Math.sqrt(s / win) + 1e-9)); }
+  if (envDb.length < 10) return { segs: [], envDb, H };
+  const sorted = envDb.slice().sort((a, b) => a - b);
+  const floor = sorted[Math.floor(sorted.length * 0.1)], top = sorted[Math.floor(sorted.length * 0.98)];
+  const thr = Math.max(floor + o.sens, top - 35, -65);                              // voiced = clearly above the room noise
+  const runs = []; let s0 = -1;
+  envDb.forEach((v, i) => { if (v > thr && s0 < 0) s0 = i; if (v <= thr && s0 >= 0) { runs.push([s0, i]); s0 = -1; } });
+  if (s0 >= 0) runs.push([s0, envDb.length]);
+  const gapH = Math.round(o.gap / 1000 / H), merged = [];
+  for (const r of runs) { const l = merged[merged.length - 1]; if (l && r[0] - l[1] <= gapH) l[1] = r[1]; else merged.push([...r]); }
+  const runsS = merged.map(([a, b]) => [a * H, Math.min(dur, (b + 1) * H)]).filter((r) => r[1] - r[0] >= 0.12);
+  const combined = [];                                                               // join short neighbours up to maxS
+  for (const r of runsS) {
+    const l = combined[combined.length - 1];
+    if (l && l[1] - l[0] < o.minS && r[1] - l[0] <= o.maxS && r[0] - l[1] <= 0.5) l[1] = r[1]; else combined.push([...r]);
+  }
+  const pieces = [];                                                                 // cut long runs at their quietest points
+  for (const [a, b] of combined) {
+    let cur = a;
+    while (b - cur > o.maxS) {
+      let best = -1, bv = Infinity;
+      for (let t = cur + o.minS; t <= Math.min(cur + o.maxS, b - 0.1); t += H) { const k = Math.min(envDb.length - 1, Math.round(t / H)); if (envDb[k] < bv) { bv = envDb[k]; best = t; } }
+      if (best < 0) best = cur + o.maxS;
+      pieces.push([cur, best]); cur = best;
+    }
+    pieces.push([cur, b]);
+  }
+  const segs = [];
+  for (let [a, b] of pieces) {
+    if (b - a < 0.25) continue;                                                      // clicks and breaths
+    if (b - a < o.minS) {                                                            // too short: extend around the middle to the minimum length
+      const mid = (a + b) / 2; a = mid - o.minS / 2; b = mid + o.minS / 2;
+      if (a < 0) { b -= a; a = 0; } if (b > dur) { a = Math.max(0, a - (b - dur)); b = dur; }
+    }
+    a = snapZC(mono, sr, a); b = snapZC(mono, sr, b);
+    const l = segs[segs.length - 1];
+    if (l && Math.min(l.b, b) - Math.max(l.a, a) > 0.5 * (b - a)) continue;         // mostly overlapping the previous one
+    segs.push({ a, b });
+  }
+  // features per sample: level and brightness (spectral centroid around the loudest moment)
+  for (const sg of segs) {
+    const i0 = Math.floor(sg.a / H), i1 = Math.min(envDb.length - 1, Math.ceil(sg.b / H)); let pk = i0;
+    for (let i = i0; i <= i1; i++) if (envDb[i] > envDb[pk]) pk = i;
+    sg.db = envDb[pk];
+    const c = Math.min(n - 2048, Math.max(0, Math.round(pk * hop - 1024))), mag = fftMag(mono.subarray(c, c + 2048));
+    let num = 0, den = 0; for (let k = Math.ceil((50 * 2048) / sr); k < Math.min(mag.length, Math.floor((6000 * 2048) / sr)); k++) { const f = (k * sr) / 2048; num += f * mag[k]; den += mag[k]; }
+    sg.centroid = den > 0 ? num / den : 0;
+    sg.f0 = detectF0(mono, sr, Math.max(sg.a, pk * H - 0.1), sg.b);
+  }
+  return { segs, envDb, H };
+}
+
+function orderedSegs(segs) {
+  const o = $('chorder').value, c = segs.slice();
+  if (o === 'pitch') c.sort((x, y) => (x.f0 > 0 ? x.f0 : Infinity) - (y.f0 > 0 ? y.f0 : Infinity) || x.a - y.a);
+  else if (o === 'bright') c.sort((x, y) => x.centroid - y.centroid);
+  else if (o === 'loud') c.sort((x, y) => x.db - y.db);
+  return c;
+}
+
+// ───── run the chopper whenever the recording or a setting changes ─────
+let chopTimer = 0;
+function rechop() {
+  clearTimeout(chopTimer);
+  chopTimer = setTimeout(() => {
+    if (!chop.mono) return;
+    const o = { minS: Math.max(0.3, +$('chmin').value || 1), maxS: Math.max(0.5, +$('chmax').value || 2), sens: +$('chsens').value, gap: +$('chgap').value };
+    if (o.maxS < o.minS) o.maxS = o.minS;
+    const keepSel = new Set(chop.segs.filter((s) => s.on).map((s) => s.a.toFixed(2)));
+    const r = chopBuffer(chop.mono, CHOP_SR, o);
+    chop.segs = r.segs; chop.segs.forEach((s) => { s.on = keepSel.size ? keepSel.has(s.a.toFixed(2)) : true; });
+    renderChop();
+  }, 150);
+}
+['chmin', 'chmax', 'chsens', 'chgap'].forEach((id) => ($(id).oninput = rechop));
+$('chorder').onchange = () => renderChop();
+$('chsenslab') && ($('chsens').addEventListener('input', () => { $('chsenslab').textContent = $('chsens').value + ' dB'; }));
+
+// ───── load: record or upload ─────
+async function setChopSource(arrayBuffer, name) {
+  const msg = $('chmsg'); msg.className = 'msg'; msg.textContent = 'Decoding…';
+  try {
+    const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, CHOP_SR);
+    const buf = await ac.decodeAudioData(arrayBuffer);
+    chop.buf = buf; chop.mono = monoOf(buf); chop.name = name; chop.peaks = null; chop.segs = [];
+    msg.textContent = name + ' · ' + fmtDur(buf.duration * 1000);
+    rechop();
+  } catch (e) { msg.className = 'msg err'; msg.textContent = 'Could not read that audio: ' + e.message; }
+}
+$('chfile').onchange = async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) await setChopSource(await f.arrayBuffer(), f.name); };
+$('chupbtn').onclick = () => $('chfile').click();
+$('chopsrc').addEventListener('dragover', (e) => e.preventDefault());
+$('chopsrc').addEventListener('drop', async (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) await setChopSource(await f.arrayBuffer(), f.name); });
+
+$('chrec').onclick = async () => {
+  const msg = $('chmsg');
+  if (chop.rec) { chop.rec.stop(); return; }                           // second click = stop
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') { msg.className = 'msg err'; msg.textContent = 'Recording is not supported in this browser.'; return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+  catch (e) { msg.className = 'msg err'; msg.textContent = 'Microphone unavailable: ' + e.message; return; }
+  const mr = new MediaRecorder(stream), chunks = [], t0 = performance.now(), ac = new AudioContext(), an = ac.createAnalyser(); an.fftSize = 1024;
+  ac.createMediaStreamSource(stream).connect(an);
+  const bufA = new Float32Array(an.fftSize); let raf;
+  const tick = () => {
+    an.getFloatTimeDomainData(bufA); let s = 0; for (const v of bufA) s += v * v;
+    $('chlvl').style.width = Math.min(100, Math.sqrt(s / bufA.length) * 300) + '%';
+    const el = performance.now() - t0; $('chmsg').textContent = 'RECORDING ' + fmtDur(el) + ' — talk, then press STOP';
+    if (el > 300000) mr.stop();                                        // 5 min limit
+    raf = requestAnimationFrame(tick);
+  };
+  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  mr.onstop = async () => {
+    cancelAnimationFrame(raf); stream.getTracks().forEach((t) => t.stop()); ac.close(); chop.rec = null;
+    $('chlvl').style.width = '0'; $('chrec').textContent = '● RECORD TALK'; $('chrec').classList.remove('on');
+    await setChopSource(await new Blob(chunks, { type: mr.mimeType }).arrayBuffer(), 'recording ' + new Date().toLocaleTimeString());
+  };
+  chop.rec = mr; mr.start(); tick();
+  $('chrec').textContent = '■ STOP'; $('chrec').classList.add('on');
+};
+
+// ───── display ─────
+const cview = $('chopview'), ccx = cview.getContext('2d');
+function fitChop() { const d = devicePixelRatio || 1, r = cview.getBoundingClientRect(); cview.width = Math.round(r.width * d); cview.height = Math.round(r.height * d); ccx.setTransform(d, 0, 0, d, 0, 0); chop.peaks = null; drawChop(); }
+addEventListener('resize', fitChop);
+function drawChop() {
+  const w = cview.clientWidth, h = cview.clientHeight;
+  ccx.fillStyle = '#2b2b2b'; ccx.fillRect(0, 0, w, h);
+  if (!chop.mono) { ccx.fillStyle = '#d0d0d0'; ccx.font = '16px ' + getComputedStyle(document.body).fontFamily; ccx.textAlign = 'center'; ccx.fillText('NO RECORDING YET — record a talk or upload a file', w / 2, h / 2); return; }
+  const n = chop.mono.length;
+  if (!chop.peaks || chop.peaksW !== w) {
+    chop.peaks = new Float32Array(w * 2); chop.peaksW = w;
+    for (let x = 0; x < w; x++) { const a = Math.floor((x * n) / w), b = Math.floor(((x + 1) * n) / w), st = Math.max(1, Math.floor((b - a) / 64)); let mn = 0, mx = 0; for (let i = a; i < b; i += st) { const v = chop.mono[i]; if (v < mn) mn = v; if (v > mx) mx = v; } chop.peaks[2 * x] = mn; chop.peaks[2 * x + 1] = mx; }
+  }
+  const sc = Math.max(0.02, ...Array.from(chop.peaks, Math.abs));
+  const dur = n / CHOP_SR, ord = orderedSegs(chop.segs);
+  chop.segs.forEach((sg) => {                                           // coloured band per sample, colour = its place in the order
+    const t = ord.length > 1 ? ord.indexOf(sg) / (ord.length - 1) : 0.5, x0 = (sg.a / dur) * w, x1 = (sg.b / dur) * w;
+    ccx.fillStyle = specCol(t, sg.on ? 0.45 : 0.12); ccx.fillRect(x0, 0, x1 - x0, h);
+    ccx.fillStyle = specCol(t, 1); ccx.fillRect(x0, 0, 2, h);
+  });
+  ccx.fillStyle = '#fff';
+  for (let x = 0; x < w; x++) { const y0 = h / 2 - (chop.peaks[2 * x + 1] / sc) * (h / 2 - 4), y1 = h / 2 - (chop.peaks[2 * x] / sc) * (h / 2 - 4); ccx.fillRect(x, y0, 1, Math.max(1, y1 - y0)); }
+  ccx.font = '15px ' + getComputedStyle(document.body).fontFamily; ccx.textAlign = 'left'; ccx.textBaseline = 'top'; ccx.fillStyle = '#fff';
+  chop.segs.forEach((sg, i) => ccx.fillText(String(i + 1), (sg.a / dur) * w + 4, 3));
+}
+cview.addEventListener('click', (e) => {                                // click a band: toggle it and listen
+  if (!chop.mono) return;
+  const t = ((e.clientX - cview.getBoundingClientRect().left) / cview.clientWidth) * (chop.mono.length / CHOP_SR);
+  const i = chop.segs.findIndex((s) => t >= s.a && t <= s.b);
+  if (i >= 0) { if (e.shiftKey) chop.segs[i].on = !chop.segs[i].on; playChop(chop.segs[i], null); renderChop(); }
+});
+
+function playChop(sg, btn) {
+  const ctx = getChopCtx(); ctx.resume();
+  if (chop.play) { try { chop.play.src.stop(); } catch {} chop.play.btn && (chop.play.btn.textContent = 'PLAY'); chop.play = null; }
+  const src = ctx.createBufferSource(), g = ctx.createGain(), t = ctx.currentTime, len = sg.b - sg.a;
+  const ab = ctx.createBuffer(1, Math.round(len * CHOP_SR), CHOP_SR); ab.getChannelData(0).set(chop.mono.subarray(Math.round(sg.a * CHOP_SR), Math.round(sg.a * CHOP_SR) + ab.length));
+  src.buffer = ab; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + 0.008); g.gain.setValueAtTime(1, t + len - 0.01); g.gain.linearRampToValueAtTime(0, t + len);
+  src.connect(g).connect(ctx.destination); src.start();
+  if (btn) btn.textContent = 'STOP';
+  src.onended = () => { if (btn) btn.textContent = 'PLAY'; if (chop.play && chop.play.src === src) chop.play = null; };
+  chop.play = { src, btn };
+}
+
+function renderChop() {
+  const ord = orderedSegs(chop.segs);
+  $('chcount').textContent = chop.segs.length + (chop.segs.length === 1 ? ' SAMPLE' : ' SAMPLES') + ' · ' + chop.segs.filter((s) => s.on).length + ' SELECTED';
+  $('chempty').hidden = chop.segs.length > 0;
+  const body = $('chbody'); body.textContent = '';
+  ord.forEach((sg, i) => {
+    const tr = document.createElement('tr');
+    const cell = (txt, cls) => { const td = document.createElement('td'); td.textContent = txt; if (cls) td.className = cls; tr.append(td); return td; };
+    cell(i + 1, 'n');
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = sg.on; cb.onchange = () => { sg.on = cb.checked; $('chcount').textContent = chop.segs.length + ' SAMPLES · ' + chop.segs.filter((s) => s.on).length + ' SELECTED'; drawChop(); };
+    cell('').append(cb);
+    cell(sg.a.toFixed(2) + ' s', 'n'); cell((sg.b - sg.a).toFixed(2) + ' s', 'n');
+    cell(sg.db.toFixed(0) + ' dB', 'n'); cell(Math.round(sg.centroid) + ' Hz', 'n'); cell(sg.f0 > 0 ? noteOf(sg.f0) + ' · ' + Math.round(sg.f0) + ' Hz' : '—', 'n');
+    const act = cell('', 'act'), pb = document.createElement('button'); pb.className = 'b'; pb.textContent = 'PLAY'; pb.onclick = () => (chop.play && chop.play.btn === pb ? (chop.play.src.stop(), chop.play = null, pb.textContent = 'PLAY') : playChop(sg, pb)); act.append(pb);
+    body.append(tr);
+  });
+  drawChop();
+}
+
+// ───── selection helpers ─────
+$('chall').onclick = () => { chop.segs.forEach((s) => (s.on = true)); renderChop(); };
+$('chnone').onclick = () => { chop.segs.forEach((s) => (s.on = false)); renderChop(); };
+$('chpick').onclick = () => {                                           // keep N evenly spread over the current order, so the zones cover the whole range
+  const N = Math.max(1, +$('chpickn').value || 8), ord = orderedSegs(chop.segs);
+  chop.segs.forEach((s) => (s.on = false));
+  if (ord.length <= N) ord.forEach((s) => (s.on = true));
+  else for (let k = 0; k < N; k++) ord[Math.round((k * (ord.length - 1)) / (N - 1 || 1))].on = true;
+  renderChop();
+};
+
+// ───── export to the library ─────
+function wavOf(sg) {
+  const sr = CHOP_SR, a = Math.round(sg.a * sr), b = Math.min(chop.mono.length, Math.round(sg.b * sr)), n = b - a, x = chop.mono.slice(a, b);
+  let pk = 0; for (const v of x) pk = Math.max(pk, Math.abs(v));
+  const gain = $('chnorm').checked && pk > 0 ? 0.89 / pk : 1, fade = Math.round(sr * 0.008);
+  const buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf), wr = (o, s) => [...s].forEach((c, i) => dv.setUint8(o + i, c.charCodeAt(0)));
+  wr(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); wr(8, 'WAVEfmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); wr(36, 'data'); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) { const e = Math.min(1, i / fade, (n - 1 - i) / fade); dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i] * gain * e)) * 32767, true); }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+async function chopExport(toVoice) {
+  const sel = orderedSegs(chop.segs).filter((s) => s.on), msg = $('chmsg');
+  if (!sel.length) { msg.className = 'msg err'; msg.textContent = 'Nothing selected.'; return; }
+  const stamp = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '');
+  const files = sel.map((s, i) => new File([wavOf(s)], 'chop_' + stamp + '_' + String(i + 1).padStart(2, '0') + '.wav', { type: 'audio/wav' }));
+  msg.className = 'msg'; msg.textContent = 'Adding ' + files.length + ' samples…';
+  await (toVoice ? importFiles(files, $('chfolder').value || 'default') : importInst(files));
+  const bad = /Skipped/.test($(toVoice ? 'upmsg' : 'iupmsg').textContent);
+  msg.className = 'msg' + (bad ? ' err' : '');
+  msg.textContent = bad ? 'Some samples could not be added: see the ' + (toVoice ? 'RECORDER' : 'INSTRUMENTS') + ' tab.' : 'Added ' + files.length + ' samples to the ' + (toVoice ? 'voice library (RECORDER tab) as vowel_N, in the order shown.' : 'instrument library (INSTRUMENTS tab).');
+}
+$('chaddv').onclick = () => chopExport(true);
+$('chaddi').onclick = () => chopExport(false);
+fitChop();
+
 // ───── init ─────
 // copy recordings / samples from the old "mycopulse" database once, if the new one is empty
 async function migrateOldDB(newDb) {
@@ -1025,7 +1769,7 @@ async function migrateOldDB(newDb) {
   } catch {}
 }
 
-openDB().then(async (d) => { db = d; await migrateOldDB(d); refreshLibrary(); instVersion++; }).catch(() => {
+openDB().then(async (d) => { db = d; await migrateOldDB(d); refreshLibrary(); instVersion++; refreshSessions(); }).catch(() => {
   $('recmsg').className = 'msg err';
   $('recmsg').textContent = 'Persistent storage unavailable: recordings will be lost on reload.';
   refreshLibrary();
